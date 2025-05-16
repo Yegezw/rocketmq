@@ -20,20 +20,6 @@ import com.alibaba.fastjson.annotation.JSONField;
 import com.google.common.base.Stopwatch;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Modifier;
-import java.nio.Buffer;
-import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.common.BoundaryType;
 import org.apache.rocketmq.common.constant.LoggerName;
@@ -44,6 +30,18 @@ import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.annotation.CFNotNull;
 import org.apache.rocketmq.remoting.exception.RemotingCommandException;
 
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Modifier;
+import java.nio.Buffer;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * 通信载体
+ */
 public class RemotingCommand {
     public static final String SERIALIZE_TYPE_PROPERTY = "rocketmq.serialize.type";
     public static final String SERIALIZE_TYPE_ENV = "ROCKETMQ_SERIALIZE_TYPE";
@@ -68,6 +66,9 @@ public class RemotingCommand {
     private static final String BOOLEAN_CANONICAL_NAME_2 = boolean.class.getCanonicalName();
     private static final String BOUNDARY_TYPE_CANONICAL_NAME = BoundaryType.class.getCanonicalName();
     private static volatile int configVersion = -1;
+    /**
+     * 生成唯一请求 id
+     */
     private static AtomicInteger requestId = new AtomicInteger(0);
 
     private static SerializeType serializeTypeConfigInThisServer = SerializeType.JSON;
@@ -83,10 +84,19 @@ public class RemotingCommand {
         }
     }
 
+    /**
+     * 请求类型 OR 响应类型 {@link RequestCode}
+     */
     private int code;
     private LanguageCode language = LanguageCode.JAVA;
     private int version = 0;
+    /**
+     * 唯一请求 id
+     */
     private int opaque = requestId.getAndIncrement();
+    /**
+     * 0 表示请求、1 表示响应、2 表示单向请求
+     */
     private int flag = 0;
     private String remark;
     private HashMap<String, String> extFields;
@@ -95,6 +105,9 @@ public class RemotingCommand {
 
     private SerializeType serializeTypeCurrentRPC = serializeTypeConfigInThisServer;
 
+    /**
+     * 请求内容 OR 响应内容
+     */
     private transient byte[] body;
     private boolean suspended;
     private transient Stopwatch processTimer;
@@ -103,6 +116,9 @@ public class RemotingCommand {
     protected RemotingCommand() {
     }
 
+    /**
+     * 创建请求命令
+     */
     public static RemotingCommand createRequestCommand(int code, CommandCustomHeader customHeader) {
         RemotingCommand cmd = new RemotingCommand();
         cmd.setCode(code);
@@ -133,6 +149,9 @@ public class RemotingCommand {
         }
     }
 
+    /**
+     * 创建响应命令
+     */
     public static RemotingCommand createResponseCommand(Class<? extends CommandCustomHeader> classHeader) {
         return createResponseCommand(RemotingSysResponseCode.SYSTEM_ERROR, "not set any response code", classHeader);
     }
@@ -249,6 +268,9 @@ public class RemotingCommand {
         return (type.getCode() << 24) | (source & 0x00FFFFFF);
     }
 
+    /**
+     * 设置消息为响应类型
+     */
     public void markResponseType() {
         int bits = 1 << RPC_TYPE;
         this.flag |= bits;
@@ -509,11 +531,17 @@ public class RemotingCommand {
         return result;
     }
 
+    /**
+     * 设置消息为单项请求
+     */
     public void markOnewayRPC() {
         int bits = 1 << RPC_ONEWAY;
         this.flag |= bits;
     }
 
+    /**
+     * 判断消息是否为单项请求
+     */
     @JSONField(serialize = false)
     public boolean isOnewayRPC() {
         int bits = 1 << RPC_ONEWAY;
@@ -537,6 +565,9 @@ public class RemotingCommand {
         return RemotingCommandType.REQUEST_COMMAND;
     }
 
+    /**
+     * 判断消息是否为响应类型
+     */
     @JSONField(serialize = false)
     public boolean isResponseType() {
         int bits = 1 << RPC_TYPE;

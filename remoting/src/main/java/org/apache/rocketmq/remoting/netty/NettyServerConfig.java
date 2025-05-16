@@ -19,30 +19,80 @@ package org.apache.rocketmq.remoting.netty;
 public class NettyServerConfig implements Cloneable {
 
     /**
+     * 监听所有网络接口<br>
      * Bind address may be hostname, IPv4 or IPv6.
      * By default, it's wildcard address, listening all network interfaces.
      */
     private String bindAddress = "0.0.0.0";
+    /**
+     * 默认 9876
+     */
     private int listenPort = 0;
+    /**
+     * Pipeline#handler 执行线程数
+     */
     private int serverWorkerThreads = 8;
+    /**
+     * 服务器回调执行线程
+     */
     private int serverCallbackExecutorThreads = 0;
+    /**
+     * worker 线程数
+     */
     private int serverSelectorThreads = 3;
+    /**
+     * 客户端单向请求最大并发数
+     */
     private int serverOnewaySemaphoreValue = 256;
+    /**
+     * 客户端异步请求最大并发数
+     */
     private int serverAsyncSemaphoreValue = 64;
+    /**
+     * 客户端 channel 最大空闲时间
+     */
     private int serverChannelMaxIdleTimeSeconds = 120;
 
+    /**
+     * 服务器发送缓冲区的默认大小
+     */
     private int serverSocketSndBufSize = NettySystemConfig.socketSndbufSize;
+    /**
+     * 服务器接收缓冲区的默认大小
+     */
     private int serverSocketRcvBufSize = NettySystemConfig.socketRcvbufSize;
+    /**
+     * 写缓冲区默认高水位线
+     */
     private int writeBufferHighWaterMark = NettySystemConfig.writeBufferHighWaterMark;
+    /**
+     * 写缓冲区默认低水位线
+     */
     private int writeBufferLowWaterMark = NettySystemConfig.writeBufferLowWaterMark;
+    /**
+     * TCP 全连接队列容量 = min(serverSocketBacklog, 128)
+     */
     private int serverSocketBacklog = NettySystemConfig.socketBacklog;
+    /**
+     * 启用单独事件线程组执行 Pipeline#handler
+     */
     private boolean serverNettyWorkerGroupEnable = true;
+    /**
+     * 是否开启 Netty 内存池化功能
+     */
     private boolean serverPooledByteBufAllocatorEnable = true;
 
+    /**
+     * 是否启用服务端优雅停机模式
+     */
     private boolean enableShutdownGracefully = false;
+    /**
+     * 优雅停机等待时间
+     */
     private int shutdownWaitTimeSeconds = 30;
 
     /**
+     * 是否启用 Epoll 模式 - 默认不启用<br>
      * make install
      *
      *

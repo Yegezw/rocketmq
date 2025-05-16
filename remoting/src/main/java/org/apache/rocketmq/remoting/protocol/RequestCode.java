@@ -17,6 +17,9 @@
 
 package org.apache.rocketmq.remoting.protocol;
 
+/**
+ * 请求类型
+ */
 public class RequestCode {
 
     public static final int SEND_MESSAGE = 10;
@@ -92,9 +95,18 @@ public class RequestCode {
 
     public static final int DELETE_KV_CONFIG = 102;
 
+    /**
+     * 注册 Broker 信息
+     */
     public static final int REGISTER_BROKER = 103;
 
+    /**
+     * 注销 Broker 信息
+     */
     public static final int UNREGISTER_BROKER = 104;
+    /**
+     * 根据主题获取路由信息
+     */
     public static final int GET_ROUTEINFO_BY_TOPIC = 105;
 
     public static final int GET_BROKER_CLUSTER_INFO = 106;
@@ -229,6 +241,9 @@ public class RequestCode {
 
     public static final int REMOVE_BROKER = 903;
 
+    /**
+     * Broker 心跳检测
+     */
     public static final int BROKER_HEARTBEAT = 904;
 
     public static final int NOTIFY_MIN_BROKER_ID_CHANGE = 905;

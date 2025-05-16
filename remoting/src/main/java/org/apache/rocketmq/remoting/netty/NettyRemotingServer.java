@@ -93,10 +93,22 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
     private static final Logger log = LoggerFactory.getLogger(LoggerName.ROCKETMQ_REMOTING_NAME);
     private static final Logger TRAFFIC_LOGGER = LoggerFactory.getLogger(LoggerName.ROCKETMQ_TRAFFIC_NAME);
 
+    /**
+     * boot
+     */
     private final ServerBootstrap serverBootstrap;
-    protected final EventLoopGroup eventLoopGroupSelector;
-    protected final EventLoopGroup eventLoopGroupBoss;
+    /**
+     * config
+     */
     protected final NettyServerConfig nettyServerConfig;
+    /**
+     * boss
+     */
+    protected final EventLoopGroup eventLoopGroupBoss;
+    /**
+     * worker
+     */
+    protected final EventLoopGroup eventLoopGroupSelector;
 
     private final ExecutorService publicExecutor;
     private final ScheduledExecutorService scheduledExecutorService;
@@ -104,6 +116,9 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
 
     private final HashedWheelTimer timer = new HashedWheelTimer(r -> new Thread(r, "ServerHouseKeepingService"));
 
+    /**
+     * 事件线程组执行 Pipeline#handler
+     */
     private DefaultEventExecutorGroup defaultEventExecutorGroup;
 
     /**
@@ -121,9 +136,21 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
 
     // sharable handlers
     protected final TlsModeHandler tlsModeHandler = new TlsModeHandler(TlsSystemConfig.tlsMode);
+    /**
+     * 编码器 Object -> Bytebuf
+     */
     protected final NettyEncoder encoder = new NettyEncoder();
+    /**
+     * 连接管理器
+     */
     protected final NettyConnectManageHandler connectionManageHandler = new NettyConnectManageHandler();
+    /**
+     * 处理器
+     */
     protected final NettyServerHandler serverHandler = new NettyServerHandler();
+    /**
+     * 统计请求响应码分布
+     */
     protected final RemotingCodeDistributionHandler distributionHandler = new RemotingCodeDistributionHandler();
 
     public NettyRemotingServer(final NettyServerConfig nettyServerConfig) {
@@ -140,18 +167,10 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
         this.publicExecutor = buildPublicExecutor(nettyServerConfig);
         this.scheduledExecutorService = buildScheduleExecutor();
 
-        this.eventLoopGroupBoss = buildEventLoopGroupBoss();
-        this.eventLoopGroupSelector = buildEventLoopGroupSelector();
+        this.eventLoopGroupBoss = buildEventLoopGroupBoss();         // boss
+        this.eventLoopGroupSelector = buildEventLoopGroupSelector(); // worker
 
         loadSslContext();
-    }
-
-    protected EventLoopGroup buildEventLoopGroupSelector() {
-        if (useEpoll()) {
-            return new EpollEventLoopGroup(nettyServerConfig.getServerSelectorThreads(), new ThreadFactoryImpl("NettyServerEPOLLSelector_"));
-        } else {
-            return new NioEventLoopGroup(nettyServerConfig.getServerSelectorThreads(), new ThreadFactoryImpl("NettyServerNIOSelector_"));
-        }
     }
 
     protected EventLoopGroup buildEventLoopGroupBoss() {
@@ -159,6 +178,14 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             return new EpollEventLoopGroup(1, new ThreadFactoryImpl("NettyEPOLLBoss_"));
         } else {
             return new NioEventLoopGroup(1, new ThreadFactoryImpl("NettyNIOBoss_"));
+        }
+    }
+
+    protected EventLoopGroup buildEventLoopGroupSelector() {
+        if (useEpoll()) {
+            return new EpollEventLoopGroup(nettyServerConfig.getServerSelectorThreads(), new ThreadFactoryImpl("NettyServerEPOLLSelector_"));
+        } else {
+            return new NioEventLoopGroup(nettyServerConfig.getServerSelectorThreads(), new ThreadFactoryImpl("NettyServerNIOSelector_"));
         }
     }
 
@@ -200,16 +227,20 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
     protected void initServerBootstrap(ServerBootstrap serverBootstrap) {
         serverBootstrap.group(this.eventLoopGroupBoss, this.eventLoopGroupSelector)
             .channel(useEpoll() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
-            .option(ChannelOption.SO_BACKLOG, 1024)
-            .option(ChannelOption.SO_REUSEADDR, true)
-            .childOption(ChannelOption.SO_KEEPALIVE, false)
-            .childOption(ChannelOption.TCP_NODELAY, true)
-            .localAddress(new InetSocketAddress(this.nettyServerConfig.getBindAddress(),
-                this.nettyServerConfig.getListenPort()))
+            .option(ChannelOption.SO_BACKLOG, 1024)          // TCP 全连接队列容量
+            .option(ChannelOption.SO_REUSEADDR, true)        // 允许端口复用 (允许新的服务端进程直接复用处于 TIME_WAIT 状态的端口)
+            .childOption(ChannelOption.SO_KEEPALIVE, false)  // 禁用连接保活计时器
+            .childOption(ChannelOption.TCP_NODELAY, true)    // 禁用 Nagle 算法
+            .localAddress(
+                    new InetSocketAddress(
+                            this.nettyServerConfig.getBindAddress(), 
+                            this.nettyServerConfig.getListenPort()
+                    )
+            )
             .childHandler(new ChannelInitializer<SocketChannel>() {
                 @Override
                 public void initChannel(SocketChannel ch) {
-                    configChannel(ch);
+                    configChannel(ch); // 配置接收到的客户端 channel - 设置 pipeline
                 }
             });
 
@@ -272,28 +303,34 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
      */
     protected ChannelPipeline configChannel(SocketChannel ch) {
         return ch.pipeline()
-            .addLast(nettyServerConfig.isServerNettyWorkerGroupEnable() ? defaultEventExecutorGroup : null,
-                HANDSHAKE_HANDLER_NAME, new HandshakeHandler())
-            .addLast(nettyServerConfig.isServerNettyWorkerGroupEnable() ? defaultEventExecutorGroup : null,
-                encoder,
-                new NettyDecoder(),
-                distributionHandler,
-                new IdleStateHandler(0, 0,
-                    nettyServerConfig.getServerChannelMaxIdleTimeSeconds()),
-                connectionManageHandler,
-                serverHandler
+            .addLast(
+                    nettyServerConfig.isServerNettyWorkerGroupEnable() ? defaultEventExecutorGroup : null, // 事件线程组执行 Pipeline#handler
+                    HANDSHAKE_HANDLER_NAME,
+                    new HandshakeHandler()
+            )
+            .addLast(
+                    nettyServerConfig.isServerNettyWorkerGroupEnable() ? defaultEventExecutorGroup : null, // 事件线程组执行 Pipeline#handler
+                    encoder,                 // 编码器 Object  -> Bytebuf    Out
+                    new NettyDecoder(),      // 解码器 Bytebuf -> Object     In
+                    distributionHandler,     // 统计请求响应码分布
+                    new IdleStateHandler(0, 0, nettyServerConfig.getServerChannelMaxIdleTimeSeconds()), // 空闲检测
+                    connectionManageHandler, // 连接管理器
+                    serverHandler            // 处理器
             );
     }
 
     private void addCustomConfig(ServerBootstrap childHandler) {
+        // 服务器发送缓冲区的默认大小
         if (nettyServerConfig.getServerSocketSndBufSize() > 0) {
             log.info("server set SO_SNDBUF to {}", nettyServerConfig.getServerSocketSndBufSize());
             childHandler.childOption(ChannelOption.SO_SNDBUF, nettyServerConfig.getServerSocketSndBufSize());
         }
+        // 服务器接收缓冲区的默认大小
         if (nettyServerConfig.getServerSocketRcvBufSize() > 0) {
             log.info("server set SO_RCVBUF to {}", nettyServerConfig.getServerSocketRcvBufSize());
             childHandler.childOption(ChannelOption.SO_RCVBUF, nettyServerConfig.getServerSocketRcvBufSize());
         }
+        // 写缓冲区默认高低水位线
         if (nettyServerConfig.getWriteBufferLowWaterMark() > 0 && nettyServerConfig.getWriteBufferHighWaterMark() > 0) {
             log.info("server set netty WRITE_BUFFER_WATER_MARK to {},{}",
                 nettyServerConfig.getWriteBufferLowWaterMark(), nettyServerConfig.getWriteBufferHighWaterMark());
@@ -301,6 +338,7 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
                 nettyServerConfig.getWriteBufferLowWaterMark(), nettyServerConfig.getWriteBufferHighWaterMark()));
         }
 
+        // 开启 Netty 内存池化功能 (ByteBuf 池化)
         if (nettyServerConfig.isServerPooledByteBufAllocatorEnable()) {
             childHandler.childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
         }
@@ -370,9 +408,11 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
 
     @Override
     public RemotingServer newRemotingServer(final int port) {
-        SubRemotingServer remotingServer = new SubRemotingServer(port,
-            this.nettyServerConfig.getServerOnewaySemaphoreValue(),
-            this.nettyServerConfig.getServerAsyncSemaphoreValue());
+        SubRemotingServer remotingServer = new SubRemotingServer(
+                port,
+                this.nettyServerConfig.getServerOnewaySemaphoreValue(),
+                this.nettyServerConfig.getServerAsyncSemaphoreValue()
+        );
         NettyRemotingAbstract existingServer = this.remotingServerTable.putIfAbsent(port, remotingServer);
         if (existingServer != null) {
             throw new RuntimeException("The port " + port + " already in use by another RemotingServer");
@@ -574,6 +614,9 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
 
     @ChannelHandler.Sharable
     public class NettyConnectManageHandler extends ChannelDuplexHandler {
+        /**
+         * channel 被注册 1
+         */
         @Override
         public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
             final String remoteAddress = RemotingHelper.parseChannelRemoteAddr(ctx.channel());
@@ -581,6 +624,9 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             super.channelRegistered(ctx);
         }
 
+        /**
+         * channel 被注销 2
+         */
         @Override
         public void channelUnregistered(ChannelHandlerContext ctx) throws Exception {
             final String remoteAddress = RemotingHelper.parseChannelRemoteAddr(ctx.channel());
@@ -588,6 +634,9 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             super.channelUnregistered(ctx);
         }
 
+        /**
+         * channel 被注册 2
+         */
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             final String remoteAddress = RemotingHelper.parseChannelRemoteAddr(ctx.channel());
@@ -599,6 +648,9 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             }
         }
 
+        /**
+         * channel 被注销 1
+         */
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             final String remoteAddress = RemotingHelper.parseChannelRemoteAddr(ctx.channel());
@@ -610,6 +662,9 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             }
         }
 
+        /**
+         * 空闲时被回调
+         */
         @Override
         public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
             if (evt instanceof IdleStateEvent) {
@@ -628,6 +683,9 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             ctx.fireUserEventTriggered(evt);
         }
 
+        /**
+         * 异常时被回调
+         */
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             final String remoteAddress = RemotingHelper.parseChannelRemoteAddr(ctx.channel());

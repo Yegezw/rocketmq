@@ -23,31 +23,7 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.Future;
 import io.opentelemetry.api.common.AttributesBuilder;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map.Entry;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
-import org.apache.rocketmq.common.AbortProcessException;
-import org.apache.rocketmq.common.MQVersion;
-import org.apache.rocketmq.common.Pair;
-import org.apache.rocketmq.common.ServiceThread;
-import org.apache.rocketmq.common.UtilAll;
+import org.apache.rocketmq.common.*;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.common.utils.ExceptionUtils;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
@@ -66,13 +42,15 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RemotingSysResponseCode;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 
-import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.LABEL_IS_LONG_POLLING;
-import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.LABEL_REQUEST_CODE;
-import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.LABEL_RESPONSE_CODE;
-import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.LABEL_RESULT;
-import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.RESULT_ONEWAY;
-import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.RESULT_PROCESS_REQUEST_FAILED;
-import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.RESULT_WRITE_CHANNEL_FAILED;
+import javax.annotation.Nullable;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+
+import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.*;
 
 public abstract class NettyRemotingAbstract {
 
@@ -83,16 +61,20 @@ public abstract class NettyRemotingAbstract {
 
     /**
      * Semaphore to limit maximum number of on-going one-way requests, which protects system memory footprint.
+     * <br>
+     * 单向请求信号量, 默认 256
      */
     protected final Semaphore semaphoreOneway;
 
     /**
      * Semaphore to limit maximum number of on-going asynchronous requests, which protects system memory footprint.
+     * <br>
+     * 异步请求信号量, 同步请求也会从这个信号量对象中获取许可证, 默认 64
      */
     protected final Semaphore semaphoreAsync;
 
     /**
-     * This map caches all on-going requests.
+     * This map caches all on-going requests. 正在进行的请求响应上下文
      */
     protected final ConcurrentMap<Integer /* opaque */, ResponseFuture> responseTable =
         new ConcurrentHashMap<>(256);
@@ -100,6 +82,8 @@ public abstract class NettyRemotingAbstract {
     /**
      * This container holds all processors per request code, aka, for each incoming request, we may look up the
      * responding processor in this map to handle the request.
+     * <br>
+     * key = {@link org.apache.rocketmq.remoting.protocol.RequestCode}
      */
     protected final HashMap<Integer/* request code */, Pair<NettyRequestProcessor, ExecutorService>> processorTable =
         new HashMap<>(64);
@@ -112,6 +96,8 @@ public abstract class NettyRemotingAbstract {
     /**
      * The default request processor to use in case there is no exact match in {@link #processorTable} per request
      * code.
+     * <br>
+     * Object1 = {@link org.apache.rocketmq.namesrv.processor.DefaultRequestProcessor}
      */
     protected Pair<NettyRequestProcessor, ExecutorService> defaultRequestProcessorPair;
 
@@ -140,8 +126,8 @@ public abstract class NettyRemotingAbstract {
      * @param permitsAsync  Number of permits for asynchronous requests.
      */
     public NettyRemotingAbstract(final int permitsOneway, final int permitsAsync) {
-        this.semaphoreOneway = new Semaphore(permitsOneway, true);
-        this.semaphoreAsync = new Semaphore(permitsAsync, true);
+        this.semaphoreOneway = new Semaphore(permitsOneway, true); // 默认 256
+        this.semaphoreAsync = new Semaphore(permitsAsync, true);   // 默认 64
     }
 
     /**
@@ -161,7 +147,7 @@ public abstract class NettyRemotingAbstract {
     }
 
     /**
-     * Entry of incoming command processing.
+     * Entry of incoming command processing. 处理接收到的消息
      *
      * <p>
      * <strong>Note:</strong>
@@ -179,10 +165,10 @@ public abstract class NettyRemotingAbstract {
         if (msg != null) {
             switch (msg.getType()) {
                 case REQUEST_COMMAND:
-                    processRequestCommand(ctx, msg);
+                    processRequestCommand(ctx, msg);  // 处理请求命令
                     break;
                 case RESPONSE_COMMAND:
-                    processResponseCommand(ctx, msg);
+                    processResponseCommand(ctx, msg); // 处理响应命令
                     break;
                 default:
                     break;
@@ -206,6 +192,9 @@ public abstract class NettyRemotingAbstract {
         }
     }
 
+    /**
+     * 核心 - 响应请求
+     */
     public static void writeResponse(Channel channel, RemotingCommand request, @Nullable RemotingCommand response) {
         writeResponse(channel, request, response, null);
     }
@@ -224,8 +213,8 @@ public abstract class NettyRemotingAbstract {
             RemotingMetricsManager.rpcLatency.record(request.getProcessTimer().elapsed(TimeUnit.MILLISECONDS), attributesBuilder.build());
             return;
         }
-        response.setOpaque(request.getOpaque());
-        response.markResponseType();
+        response.setOpaque(request.getOpaque()); // 关联请求的 opaque
+        response.markResponseType();             // 响应类型
         try {
             channel.writeAndFlush(response).addListener((ChannelFutureListener) future -> {
                 if (future.isSuccess()) {
@@ -251,7 +240,7 @@ public abstract class NettyRemotingAbstract {
     }
 
     /**
-     * Process incoming request command issued by remote peer.
+     * Process incoming request command issued by remote peer. 处理请求命令
      *
      * @param ctx channel handler context.
      * @param cmd request command.
@@ -375,22 +364,24 @@ public abstract class NettyRemotingAbstract {
     }
 
     /**
-     * Process response from remote peer to the previous issued requests.
+     * Process response from remote peer to the previous issued requests. 处理响应命令
      *
      * @param ctx channel handler context.
      * @param cmd response command instance.
      */
     public void processResponseCommand(ChannelHandlerContext ctx, RemotingCommand cmd) {
         final int opaque = cmd.getOpaque();
-        final ResponseFuture responseFuture = responseTable.get(opaque);
+        final ResponseFuture responseFuture = responseTable.get(opaque); // 从响应表 (正在进行的请求响应上下文) 中获取响应上下文
         if (responseFuture != null) {
             responseFuture.setResponseCommand(cmd);
 
             responseTable.remove(opaque);
 
             if (responseFuture.getInvokeCallback() != null) {
+                // 执行回调 + 释放信号量
                 executeInvokeCallback(responseFuture);
             } else {
+                // 唤醒等待 + 释放信号量
                 responseFuture.putResponse(cmd);
                 responseFuture.release();
             }
@@ -401,6 +392,8 @@ public abstract class NettyRemotingAbstract {
 
     /**
      * Execute callback in callback executor. If callback executor is null, run directly in current thread
+     * <br>
+     * 执行回调 + 释放信号量
      */
     private void executeInvokeCallback(final ResponseFuture responseFuture) {
         boolean runInThisThread = false;
@@ -488,13 +481,16 @@ public abstract class NettyRemotingAbstract {
 
         for (ResponseFuture rf : rfList) {
             try {
-                executeInvokeCallback(rf);
+                executeInvokeCallback(rf);  // 执行回调 + 释放信号量
             } catch (Throwable e) {
                 log.warn("scanResponseTable, operationComplete Exception", e);
             }
         }
     }
 
+    /**
+     * 核心 - 同步请求
+     */
     public RemotingCommand invokeSyncImpl(final Channel channel, final RemotingCommand request,
         final long timeoutMillis)
         throws InterruptedException, RemotingSendRequestException, RemotingTimeoutException {
@@ -521,14 +517,14 @@ public abstract class NettyRemotingAbstract {
 
         boolean acquired;
         try {
-            acquired = this.semaphoreAsync.tryAcquire(timeoutMillis, TimeUnit.MILLISECONDS);
+            acquired = this.semaphoreAsync.tryAcquire(timeoutMillis, TimeUnit.MILLISECONDS); // 获取信号量
         } catch (Throwable t) {
             future.completeExceptionally(t);
             return future;
         }
         if (acquired) {
             final SemaphoreReleaseOnlyOnce once = new SemaphoreReleaseOnlyOnce(this.semaphoreAsync);
-            long costTime = System.currentTimeMillis() - beginStartTime;
+            long costTime = System.currentTimeMillis() - beginStartTime; // 获取信号量的耗时
             if (timeoutMillis < costTime) {
                 once.release();
                 future.completeExceptionally(new RemotingTimeoutException("invokeAsyncImpl call timeout"));
@@ -554,14 +550,14 @@ public abstract class NettyRemotingAbstract {
                     }
                 }, once);
             responseFutureReference.set(responseFuture);
-            this.responseTable.put(opaque, responseFuture);
+            this.responseTable.put(opaque, responseFuture); // 放入响应表 (正在进行的请求响应上下文)
             try {
                 channel.writeAndFlush(request).addListener((ChannelFutureListener) f -> {
                     if (f.isSuccess()) {
                         responseFuture.setSendRequestOK(true);
                         return;
                     }
-                    requestFail(opaque);
+                    requestFail(opaque); // 发送请求失败
                     log.warn("send a request command to channel <{}>, channelId={}, failed.", RemotingHelper.parseChannelRemoteAddr(channel), channel.id());
                 });
                 return future;
@@ -589,6 +585,9 @@ public abstract class NettyRemotingAbstract {
         }
     }
 
+    /**
+     * 核心 - 异步请求
+     */
     public void invokeAsyncImpl(final Channel channel, final RemotingCommand request, final long timeoutMillis,
         final InvokeCallback invokeCallback) {
         invokeImpl(channel, request, timeoutMillis)
@@ -639,6 +638,9 @@ public abstract class NettyRemotingAbstract {
         }
     }
 
+    /**
+     * 核心 - 单项请求
+     */
     public void invokeOnewayImpl(final Channel channel, final RemotingCommand request, final long timeoutMillis)
         throws InterruptedException, RemotingTooMuchRequestException, RemotingTimeoutException, RemotingSendRequestException {
         request.markOnewayRPC();

@@ -17,9 +17,6 @@
 package org.apache.rocketmq.remoting.netty;
 
 import io.netty.channel.Channel;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.rocketmq.remoting.InvokeCallback;
 import org.apache.rocketmq.remoting.common.SemaphoreReleaseOnlyOnce;
 import org.apache.rocketmq.remoting.exception.RemotingException;
@@ -27,18 +24,52 @@ import org.apache.rocketmq.remoting.exception.RemotingSendRequestException;
 import org.apache.rocketmq.remoting.exception.RemotingTimeoutException;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * 请求响应上下文 - 请求 + 请求信号量 + 响应 + 响应回调
+ */
 public class ResponseFuture {
     private final Channel channel;
+    /**
+     * 唯一请求 id
+     */
     private final int opaque;
+    /**
+     * 请求对象
+     */
     private final RemotingCommand request;
-    private final long timeoutMillis;
-    private final InvokeCallback invokeCallback;
+    /**
+     * 请求开始时间
+     */
     private final long beginTimestamp = System.currentTimeMillis();
+    /**
+     * 请求超时时间
+     */
+    private final long timeoutMillis;
+    /**
+     * 回调函数
+     */
+    private final InvokeCallback invokeCallback;
+    /**
+     * 等待响应
+     */
     private final CountDownLatch countDownLatch = new CountDownLatch(1);
 
+    /**
+     * 只释放一次的信号量, 在成功收到响应之后, 该信号量应该被释放
+     */
     private final SemaphoreReleaseOnlyOnce once;
 
+    /**
+     * 是否只执行一次回调函数
+     */
     private final AtomicBoolean executeCallbackOnlyOnce = new AtomicBoolean(false);
+    /**
+     * 响应对象
+     */
     private volatile RemotingCommand responseCommand;
     private volatile boolean sendRequestOK = true;
     private volatile Throwable cause;

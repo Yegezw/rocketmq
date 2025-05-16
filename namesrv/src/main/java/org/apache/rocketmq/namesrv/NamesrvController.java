@@ -16,12 +16,6 @@
  */
 package org.apache.rocketmq.namesrv;
 
-import java.util.Collections;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.apache.rocketmq.common.ThreadFactoryImpl;
 import org.apache.rocketmq.common.constant.LoggerName;
@@ -42,15 +36,16 @@ import org.apache.rocketmq.remoting.Configuration;
 import org.apache.rocketmq.remoting.RemotingClient;
 import org.apache.rocketmq.remoting.RemotingServer;
 import org.apache.rocketmq.remoting.common.TlsMode;
-import org.apache.rocketmq.remoting.netty.NettyClientConfig;
-import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
-import org.apache.rocketmq.remoting.netty.NettyRemotingServer;
-import org.apache.rocketmq.remoting.netty.NettyServerConfig;
-import org.apache.rocketmq.remoting.netty.RequestTask;
-import org.apache.rocketmq.remoting.netty.TlsSystemConfig;
+import org.apache.rocketmq.remoting.netty.*;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.srvutil.FileWatchService;
 
+import java.util.Collections;
+import java.util.concurrent.*;
+
+/**
+ * Broker 注册中心, 由 {@link NamesrvStartup} 启动
+ */
 public class NamesrvController {
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
     private static final Logger WATER_MARK_LOG = LoggerFactory.getLogger(LoggerName.NAMESRV_WATER_MARK_LOGGER_NAME);
@@ -129,6 +124,9 @@ public class NamesrvController {
         }, 10, 1, TimeUnit.SECONDS);
     }
 
+    /**
+     * 初始化网络组件
+     */
     private void initiateNetworkComponents() {
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.brokerHousekeepingService);
         this.remotingClient = new NettyRemotingClient(this.nettyClientConfig);
@@ -201,6 +199,9 @@ public class NamesrvController {
         return slowTimeMills;
     }
 
+    /**
+     * 注册请求处理器 {@link NettyRequestProcessor} 到 {@link #remotingServer}
+     */
     private void registerProcessor() {
         if (namesrvConfig.isClusterTest()) {
 
@@ -218,8 +219,11 @@ public class NamesrvController {
         this.remotingServer.registerRPCHook(new ZoneRouteRPCHook());
     }
 
+    /**
+     * 启动 Broker 注册中心
+     */
     public void start() throws Exception {
-        this.remotingServer.start();
+        this.remotingServer.start(); // 启动 Namesrv 服务器
 
         // In test scenarios where it is up to OS to pick up an available port, set the listening port back to config
         if (0 == nettyServerConfig.getListenPort()) {
@@ -237,6 +241,9 @@ public class NamesrvController {
         this.routeInfoManager.start();
     }
 
+    /**
+     * 停止 Broker 注册中心
+     */
     public void shutdown() {
         this.remotingClient.shutdown();
         this.remotingServer.shutdown();
