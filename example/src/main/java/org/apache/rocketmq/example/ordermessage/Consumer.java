@@ -16,8 +16,6 @@
  */
 package org.apache.rocketmq.example.ordermessage;
 
-import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.consumer.listener.ConsumeOrderlyContext;
 import org.apache.rocketmq.client.consumer.listener.ConsumeOrderlyStatus;
@@ -25,16 +23,31 @@ import org.apache.rocketmq.client.consumer.listener.MessageListenerOrderly;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.example.Env;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Consumer {
 
     public static void main(String[] args) throws MQClientException {
         DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name_3");
+        consumer.setNamesrvAddr(Env.DEFAULT_NAMESRVADDR);
 
         consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
 
-        consumer.subscribe("TopicTest", "TagA || TagC || TagD");
+        consumer.subscribe("TopicTestjjj", "TagA || TagC || TagD");
 
+        /*
+         * 与并发消费 MessageListenerConcurrently 的区别
+         * 加锁机制：同一队列同时只有一个线程消费（队列级别锁）
+         * 顺序保证：保证同一队列内消息按 FIFO 顺序消费
+         * 重试策略：失败时暂停当前队列，不会跳过消费下一条
+         *
+         * 当前队列暂停消费 3 秒后，重试当前批次消息
+         * 期间该队列消息堆积，其他队列不受影响
+         * 默认暂停时间 1000ms
+         */
         consumer.registerMessageListener(new MessageListenerOrderly() {
             AtomicLong consumeTimes = new AtomicLong(0);
 
@@ -46,7 +59,7 @@ public class Consumer {
                 if ((this.consumeTimes.get() % 2) == 0) {
                     return ConsumeOrderlyStatus.SUCCESS;
                 } else if ((this.consumeTimes.get() % 5) == 0) {
-                    context.setSuspendCurrentQueueTimeMillis(3000);
+                    context.setSuspendCurrentQueueTimeMillis(3000); // 暂停 3 秒
                     return ConsumeOrderlyStatus.SUSPEND_CURRENT_QUEUE_A_MOMENT;
                 }
 

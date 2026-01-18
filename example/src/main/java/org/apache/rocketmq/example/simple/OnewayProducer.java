@@ -18,6 +18,7 @@ package org.apache.rocketmq.example.simple;
 
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.example.Env;
 
 import java.nio.charset.StandardCharsets;
 
@@ -26,7 +27,7 @@ public class OnewayProducer {
         //Instantiate with a producer group name.
         DefaultMQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
         // Specify name server addresses.
-        producer.setNamesrvAddr("localhost:9876");
+        producer.setNamesrvAddr(Env.DEFAULT_NAMESRVADDR);
         //Launch the instance.
         producer.start();
         for (int i = 0; i < 100; i++) {
