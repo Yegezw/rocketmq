@@ -163,6 +163,7 @@ public class NamesrvStartup {
             throw new IllegalArgumentException("NamesrvController is null");
         }
 
+        // 初始化
         boolean initResult = controller.initialize();
         if (!initResult) {
             controller.shutdown();
@@ -174,6 +175,7 @@ public class NamesrvStartup {
             return null;
         }));
 
+        // 启动
         controller.start();
 
         return controller;

@@ -16,15 +16,15 @@
  */
 package org.apache.rocketmq.remoting.protocol;
 
+import io.netty.buffer.ByteBuf;
+import org.apache.rocketmq.remoting.exception.RemotingCommandException;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
-import org.apache.rocketmq.remoting.exception.RemotingCommandException;
-
-import io.netty.buffer.ByteBuf;
 
 public class RocketMQSerializable {
     private static final Charset CHARSET_UTF8 = StandardCharsets.UTF_8;

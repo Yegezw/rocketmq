@@ -39,6 +39,14 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/*
+ * Message Length (4 byte) | Serialization Type (1 byte) + Header Length (3 byte)
+ * Data Header             | Message Body
+ * ROCKETMQ 序列化方式下的消息头包括
+ * code   (2 byte) | language (1 byte) | version (2 byte)
+ * opaque (4 byte) | flag     (4 byte) | remark  (4 + ? byte) | extFields (4 + ? byte)
+ */
+
 /**
  * 通信载体
  */
@@ -71,6 +79,9 @@ public class RemotingCommand {
      */
     private static AtomicInteger requestId = new AtomicInteger(0);
 
+    /**
+     * 消息头的序列化方式
+     */
     private static SerializeType serializeTypeConfigInThisServer = SerializeType.JSON;
 
     static {
@@ -85,7 +96,7 @@ public class RemotingCommand {
     }
 
     /**
-     * 请求类型 OR 响应类型 {@link RequestCode}
+     * {@link RequestCode 请求类型} OR {@link ResponseCode 响应类型}
      */
     private int code;
     private LanguageCode language = LanguageCode.JAVA;
@@ -98,11 +109,26 @@ public class RemotingCommand {
      * 0 表示请求、1 表示响应、2 表示单向请求
      */
     private int flag = 0;
+    /**
+     * 自定义文本信息
+     */
     private String remark;
+    /**
+     * 自定义扩展信息
+     */
     private HashMap<String, String> extFields;
+    /**
+     * 请求头
+     */
     private transient CommandCustomHeader customHeader;
+    /**
+     * 响应头
+     */
     private transient CommandCustomHeader cachedHeader;
 
+    /**
+     * 消息头的序列化方式
+     */
     private SerializeType serializeTypeCurrentRPC = serializeTypeConfigInThisServer;
 
     /**
@@ -284,6 +310,9 @@ public class RemotingCommand {
         this.customHeader = customHeader;
     }
 
+    /**
+     * 根据 {@link RemotingCommand#extFields} 创建 {@link RemotingCommand#cachedHeader 响应头}
+     */
     public <T extends CommandCustomHeader> T decodeCommandCustomHeader(
         Class<T> classHeader) throws RemotingCommandException {
         return decodeCommandCustomHeader(classHeader, false);
@@ -449,6 +478,9 @@ public class RemotingCommand {
         }
     }
 
+    /**
+     * 将 {@link RemotingCommand#customHeader 请求头} 中的字段写入 {@link RemotingCommand#extFields} 中
+     */
     public void makeCustomHeaderToNet() {
         if (this.customHeader != null) {
             Field[] fields = getClazzFields(customHeader.getClass());
@@ -485,8 +517,9 @@ public class RemotingCommand {
         int headerSize;
         if (SerializeType.ROCKETMQ == serializeTypeCurrentRPC) {
             if (customHeader != null && !(customHeader instanceof FastCodesHeader)) {
-                this.makeCustomHeaderToNet();
+                this.makeCustomHeaderToNet(); // 把消息头中的数据存储到 extFields 成员变量中
             }
+            // 对当前消息进行编码, 返回编码后的消息头字节长度
             headerSize = RocketMQSerializable.rocketMQProtocolEncode(this, out);
         } else {
             this.makeCustomHeaderToNet();

@@ -52,6 +52,9 @@ import java.util.function.Consumer;
 
 import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.*;
 
+/**
+ * 请求方式: 同步请求, 异步请求, 单向请求
+ */
 public abstract class NettyRemotingAbstract {
 
     /**
@@ -461,7 +464,7 @@ public abstract class NettyRemotingAbstract {
 
     /**
      * <p>
-     * This method is periodically invoked to scan and expire deprecated request.
+     * This method is periodically invoked to scan and expire deprecated request. 扫描过期请求
      * </p>
      */
     public void scanResponseTable() {
@@ -481,7 +484,7 @@ public abstract class NettyRemotingAbstract {
 
         for (ResponseFuture rf : rfList) {
             try {
-                executeInvokeCallback(rf);  // 执行回调 + 释放信号量
+                executeInvokeCallback(rf); // 执行回调 + 释放信号量
             } catch (Throwable e) {
                 log.warn("scanResponseTable, operationComplete Exception", e);
             }

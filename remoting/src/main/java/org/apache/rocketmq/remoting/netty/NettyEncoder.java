@@ -26,6 +26,14 @@ import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.remoting.common.RemotingHelper;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/*
+ * Message Length (4 byte) | Serialization Type (1 byte) + Header Length (3 byte)
+ * Data Header             | Message Body
+ * ROCKETMQ 序列化方式下的消息头包括
+ * code   (2 byte) | language (1 byte) | version (2 byte)
+ * opaque (4 byte) | flag     (4 byte) | remark  (4 + ? byte) | extFields (4 + ? byte)
+ */
+
 @ChannelHandler.Sharable
 public class NettyEncoder extends MessageToByteEncoder<RemotingCommand> {
     private static final Logger log = LoggerFactory.getLogger(LoggerName.ROCKETMQ_REMOTING_NAME);

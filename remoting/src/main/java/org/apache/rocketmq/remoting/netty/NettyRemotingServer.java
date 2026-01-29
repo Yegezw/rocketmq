@@ -110,14 +110,20 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
      */
     protected final EventLoopGroup eventLoopGroupSelector;
 
+    /**
+     * 默认 4 个线程
+     */
     private final ExecutorService publicExecutor;
+    /**
+     * 默认 1 个线程
+     */
     private final ScheduledExecutorService scheduledExecutorService;
     private final ChannelEventListener channelEventListener;
 
     private final HashedWheelTimer timer = new HashedWheelTimer(r -> new Thread(r, "ServerHouseKeepingService"));
 
     /**
-     * 事件线程组执行 Pipeline#handler
+     * 事件线程组执行 Pipeline#handler, 默认 8 个线程
      */
     private DefaultEventExecutorGroup defaultEventExecutorGroup;
 
@@ -598,12 +604,14 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
         public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
             Channel channel = ctx.channel();
             if (channel.isWritable()) {
+                // 恢复读取数据
                 if (!channel.config().isAutoRead()) {
                     channel.config().setAutoRead(true);
                     log.info("Channel[{}] turns writable, bytes to buffer before changing channel to un-writable: {}",
                         RemotingHelper.parseChannelRemoteAddr(channel), channel.bytesBeforeUnwritable());
                 }
             } else {
+                // 停止读取数据
                 channel.config().setAutoRead(false);
                 log.warn("Channel[{}] auto-read is disabled, bytes to drain before it turns writable: {}",
                     RemotingHelper.parseChannelRemoteAddr(channel), channel.bytesBeforeWritable());
