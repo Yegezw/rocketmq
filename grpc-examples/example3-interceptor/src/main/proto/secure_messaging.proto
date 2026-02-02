@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.example.interceptor";
+option java_outer_classname = "SecureMessagingProto";
+
+package interceptor;
+
+// 安全消息服务 (带认证和授权)
+service SecureMessagingService {
+  // 发送消息 (需要认证和授权)
+  rpc SendMessage (SendMessageRequest) returns (SendMessageResponse) {}
+
+  // 查询消息 (需要认证)
+  rpc QueryMessage (QueryMessageRequest) returns (QueryMessageResponse) {}
+}
+
+// ========== 发送消息相关 ==========
+
+message SendMessageRequest {
+  string topic = 1;      // 主题
+  string body = 2;       // 消息体
+}
+
+message SendMessageResponse {
+  string message_id = 1; // 消息 ID
+  string status = 2;     // 状态
+}
+
+// ========== 查询消息相关 ==========
+
+message QueryMessageRequest {
+  string message_id = 1; // 消息 ID
+}
+
+message QueryMessageResponse {
+  string message_id = 1; // 消息 ID
+  string topic = 2;      // 主题
+  string body = 3;       // 消息体
+  int64 timestamp = 4;   // 产生时间
+}

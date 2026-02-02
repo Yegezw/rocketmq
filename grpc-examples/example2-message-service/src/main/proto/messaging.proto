@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.example.messaging";
+option java_outer_classname = "MessagingProto";
+
+package messaging;
+
+// 消息服务 (模拟 RocketMQ Proxy)
+service MessagingService {
+  // 发送消息 (一元 RPC)
+  rpc SendMessage (SendMessageRequest) returns (SendMessageResponse) {}
+
+  // 接收消息 (服务端流 RPC)
+  rpc ReceiveMessage (ReceiveMessageRequest) returns (stream ReceiveMessageResponse) {}
+
+  // 查询路由 (一元 RPC)
+  rpc QueryRoute (QueryRouteRequest) returns (QueryRouteResponse) {}
+}
+
+// ========== 发送消息相关 ==========
+
+message SendMessageRequest {
+  string topic = 1;            // 主题
+  string tag = 2;              // 标签
+  bytes body = 3;              // 消息体
+  map<string, string> properties = 4; // 自定义属性
+}
+
+message SendMessageResponse {
+  Status status = 1;           // 状态
+  string message_id = 2;       // 消息 ID
+  int64 queue_offset = 3;      // 队列偏移量
+}
+
+// ========== 接收消息相关 ==========
+
+message ReceiveMessageRequest {
+  string topic = 1;            // 主题
+  string consumer_group = 2;   // 消费者组
+  int32 max_messages = 3;      // 最大消息数
+}
+
+message ReceiveMessageResponse {
+  Status status = 1;           // 状态
+  Message message = 2;         // 消息
+}
+
+message Message {
+  string message_id = 1;       // 消息 ID
+  string topic = 2;            // 主题
+  string tag = 3;              // 标签
+  bytes body = 4;              // 消息体
+  int64 born_timestamp = 5;    // 产生时间
+  map<string, string> properties = 6; // 自定义属性
+}
+
+// ========== 查询路由相关 ==========
+
+message QueryRouteRequest {
+  string topic = 1;            // 主题
+}
+
+message QueryRouteResponse {
+  Status status = 1;           // 状态
+  repeated Broker brokers = 2; // Broker 列表
+}
+
+message Broker {
+  string name = 1;             // Broker 名称
+  string address = 2;          // Broker 地址
+  repeated int32 queues = 3;   // 队列 ID 列表
+}
+
+// ========== 通用状态 ==========
+
+message Status {
+  Code code = 1;               // 状态码
+  string message = 2;          // 状态消息
+}
+
+enum Code {
+  OK = 0;                      // 成功
+  BAD_REQUEST = 1;             // 请求错误
+  TOPIC_NOT_EXIST = 2;         // 主题不存在
+  INTERNAL_ERROR = 3;          // 内部错误
+}

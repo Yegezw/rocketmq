@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.example.helloworld";
+option java_outer_classname = "HelloWorldProto";
+
+package helloworld;
+
+// 定义 HelloWorld 服务
+service Greeter {
+  // 一元 RPC: 发送一个请求, 返回一个响应
+  rpc SayHello (HelloRequest) returns (HelloReply) {}
+
+  // 服务端流 RPC: 发送一个请求, 返回多个响应
+  rpc SayHelloStream (HelloRequest) returns (stream HelloReply) {}
+}
+
+// 请求消息
+message HelloRequest {
+  string name = 1;
+}
+
+// 响应消息
+message HelloReply {
+  string message = 1;
+}
