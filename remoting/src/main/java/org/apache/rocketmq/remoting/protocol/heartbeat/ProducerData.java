@@ -17,10 +17,14 @@
 
 /**
  * $Id: ProducerData.java 1835 2013-05-16 02:00:50Z vintagewang@apache.org $
+ * 生产者心跳数据
  */
 package org.apache.rocketmq.remoting.protocol.heartbeat;
 
 public class ProducerData {
+    /**
+     * 生产者组名称
+     */
     private String groupName;
 
     public String getGroupName() {
@@ -31,6 +35,11 @@ public class ProducerData {
         this.groupName = groupName;
     }
 
+    /**
+     * 生成对象可读字符串
+     *
+     * @return 当前对象字符串
+     */
     @Override
     public String toString() {
         return "ProducerData [groupName=" + groupName + "]";

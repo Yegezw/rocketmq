@@ -16,11 +16,30 @@
  */
 package org.apache.rocketmq.remoting.common;
 
+/**
+ * Heartbeat V2 结果对象, 记录版本和能力协商状态
+ */
 public class HeartbeatV2Result {
+    /**
+     * 心跳版本号
+     */
     private int version = 0;
+    /**
+     * 订阅信息是否发生变化
+     */
     private boolean isSubChange = false;
+    /**
+     * 对端是否支持 Heartbeat V2
+     */
     private boolean isSupportV2 = false;
 
+    /**
+     * 创建 HeartbeatV2Result 实例
+     *
+     * @param version     心跳版本号
+     * @param isSubChange 订阅变化标记
+     * @param isSupportV2 V2 支持标记
+     */
     public HeartbeatV2Result(int version, boolean isSubChange, boolean isSupportV2) {
         this.version = version;
         this.isSubChange = isSubChange;

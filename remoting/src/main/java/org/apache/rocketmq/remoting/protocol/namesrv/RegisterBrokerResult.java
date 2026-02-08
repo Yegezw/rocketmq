@@ -19,9 +19,21 @@ package org.apache.rocketmq.remoting.protocol.namesrv;
 
 import org.apache.rocketmq.remoting.protocol.body.KVTable;
 
+/**
+ * Broker 注册结果
+ */
 public class RegisterBrokerResult {
+    /**
+     * HA 服务地址
+     */
     private String haServerAddr;
+    /**
+     * Master 地址
+     */
     private String masterAddr;
+    /**
+     * 附加键值信息
+     */
     private KVTable kvTable;
 
     public String getHaServerAddr() {

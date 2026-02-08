@@ -20,14 +20,29 @@ import com.google.common.base.MoreObjects;
 import java.util.Objects;
 import org.apache.rocketmq.remoting.CommandCustomHeader;
 
+/**
+ * RPC 请求头抽象基类
+ */
 public abstract class RpcRequestHeader implements CommandCustomHeader {
     //the namespace name
+    /**
+     * 命名空间名称
+     */
     protected String ns;
     //if the data has been namespaced
+    /**
+     * 数据是否已带命名空间标记
+     */
     protected Boolean nsd;
     //the abstract remote addr name, usually the physical broker name
+    /**
+     * 抽象远端地址标识, 通常为物理 Broker 名称
+     */
     protected String bname;
     //oneway
+    /**
+     * 是否单向请求
+     */
     protected Boolean oway;
 
     @Deprecated
@@ -72,6 +87,12 @@ public abstract class RpcRequestHeader implements CommandCustomHeader {
         this.oway = oneway;
     }
 
+    /**
+     * 判断请求头对象是否相等
+     *
+     * @param o 待比较对象
+     * @return 字段一致时返回 true
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -84,11 +105,21 @@ public abstract class RpcRequestHeader implements CommandCustomHeader {
         return Objects.equals(ns, header.ns) && Objects.equals(nsd, header.nsd) && Objects.equals(bname, header.bname) && Objects.equals(oway, header.oway);
     }
 
+    /**
+     * 计算请求头哈希值
+     *
+     * @return 当前对象哈希值
+     */
     @Override
     public int hashCode() {
         return Objects.hash(ns, nsd, bname, oway);
     }
 
+    /**
+     * 生成请求头可读字符串
+     *
+     * @return 当前对象字符串
+     */
     @Override
     public String toString() {
         return MoreObjects.toStringHelper(this)

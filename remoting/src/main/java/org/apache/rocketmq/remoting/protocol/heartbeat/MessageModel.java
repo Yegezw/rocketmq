@@ -17,24 +17,36 @@
 
 /**
  * $Id: MessageModel.java 1835 2013-05-16 02:00:50Z vintagewang@apache.org $
+ * 消息消费模型枚举
  */
 package org.apache.rocketmq.remoting.protocol.heartbeat;
 
 /**
- * Message model
+ * Message model<br>
+ * 消息模型
  */
 public enum MessageModel {
     /**
-     * broadcast
+     * broadcast<br>
+     * 广播消费
      */
     BROADCASTING("BROADCASTING"),
     /**
-     * clustering
+     * clustering<br>
+     * 集群消费
      */
     CLUSTERING("CLUSTERING");
 
+    /**
+     * 模型展示值
+     */
     private String modeCN;
 
+    /**
+     * 创建消息模型枚举值
+     *
+     * @param modeCN 模型展示值
+     */
     MessageModel(String modeCN) {
         this.modeCN = modeCN;
     }

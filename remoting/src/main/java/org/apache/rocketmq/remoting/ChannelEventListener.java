@@ -19,13 +19,43 @@ package org.apache.rocketmq.remoting;
 import io.netty.channel.Channel;
 
 public interface ChannelEventListener {
+    /**
+     * 处理通道建立事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel    Netty 通道
+     */
     void onChannelConnect(final String remoteAddr, final Channel channel);
 
+    /**
+     * 处理通道关闭事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel    Netty 通道
+     */
     void onChannelClose(final String remoteAddr, final Channel channel);
 
+    /**
+     * 处理通道异常事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel    Netty 通道
+     */
     void onChannelException(final String remoteAddr, final Channel channel);
 
+    /**
+     * 处理通道空闲事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel    Netty 通道
+     */
     void onChannelIdle(final String remoteAddr, final Channel channel);
 
+    /**
+     * 处理通道活跃事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel    Netty 通道
+     */
     void onChannelActive(final String remoteAddr, final Channel channel);
 }

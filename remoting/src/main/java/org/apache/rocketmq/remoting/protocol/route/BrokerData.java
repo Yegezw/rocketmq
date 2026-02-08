@@ -17,38 +17,66 @@
 
 package org.apache.rocketmq.remoting.protocol.route;
 
+import org.apache.commons.lang3.StringUtils;
+import org.apache.rocketmq.common.MixAll;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.rocketmq.common.MixAll;
 
 /**
  * The class describes that a typical broker cluster's (in replication) details: the cluster (in sharding) name
  * that it belongs to, and all the single instance information for this cluster.
+ * <br>
+ * 该类描述 Broker 复制组在路由中的信息: 包括所属集群和各实例地址
  */
 public class BrokerData implements Comparable<BrokerData> {
+    /**
+     * 所属集群名称
+     */
     private String cluster;
+    /**
+     * Broker 名称
+     */
     private String brokerName;
 
     /**
      * The container that store the all single instances for the current broker replication cluster.
      * The key is the brokerId, and the value is the address of the single broker instance.
+     * <br>
+     * 当前 Broker 复制组下的实例地址映射<br>
+     * key 为 brokerId, value 为实例地址
      */
     private HashMap<Long, String> brokerAddrs;
+    /**
+     * 可用区名称
+     */
     private String zoneName;
+    /**
+     * 地址随机选择器
+     */
     private final Random random = new Random();
 
     /**
      * Enable acting master or not, used for old version HA adaption,
+     * <br>
+     * 是否启用代理主节点能力, 用于旧版 HA 兼容
      */
     private boolean enableActingMaster = false;
 
+    /**
+     * 创建空 Broker 路由数据
+     */
     public BrokerData() {
 
     }
 
+    /**
+     * 使用已有对象创建副本
+     *
+     * @param brokerData 源 Broker 数据
+     */
     public BrokerData(BrokerData brokerData) {
         this.cluster = brokerData.cluster;
         this.brokerName = brokerData.brokerName;
@@ -59,12 +87,27 @@ public class BrokerData implements Comparable<BrokerData> {
         this.enableActingMaster = brokerData.enableActingMaster;
     }
 
+    /**
+     * 构建 Broker 路由数据
+     *
+     * @param cluster 集群名称
+     * @param brokerName Broker 名称
+     * @param brokerAddrs Broker 地址映射
+     */
     public BrokerData(String cluster, String brokerName, HashMap<Long, String> brokerAddrs) {
         this.cluster = cluster;
         this.brokerName = brokerName;
         this.brokerAddrs = brokerAddrs;
     }
 
+    /**
+     * 构建 Broker 路由数据
+     *
+     * @param cluster 集群名称
+     * @param brokerName Broker 名称
+     * @param brokerAddrs Broker 地址映射
+     * @param enableActingMaster 是否启用代理主节点
+     */
     public BrokerData(String cluster, String brokerName, HashMap<Long, String> brokerAddrs,
         boolean enableActingMaster) {
         this.cluster = cluster;
@@ -73,6 +116,15 @@ public class BrokerData implements Comparable<BrokerData> {
         this.enableActingMaster = enableActingMaster;
     }
 
+    /**
+     * 构建 Broker 路由数据
+     *
+     * @param cluster 集群名称
+     * @param brokerName Broker 名称
+     * @param brokerAddrs Broker 地址映射
+     * @param enableActingMaster 是否启用代理主节点
+     * @param zoneName 可用区名称
+     */
     public BrokerData(String cluster, String brokerName, HashMap<Long, String> brokerAddrs, boolean enableActingMaster,
         String zoneName) {
         this.cluster = cluster;
@@ -85,6 +137,9 @@ public class BrokerData implements Comparable<BrokerData> {
     /**
      * Selects a (preferably master) broker address from the registered list. If the master's address cannot be found, a
      * slave broker address is selected in a random manner.
+     * <br>
+     * 从已注册地址中选择 Broker 地址, 优先返回 Master 地址
+     * 当 Master 不存在时从从节点地址中随机选择
      *
      * @return Broker address.
      */
@@ -131,6 +186,11 @@ public class BrokerData implements Comparable<BrokerData> {
         this.zoneName = zoneName;
     }
 
+    /**
+     * 计算对象哈希值
+     *
+     * @return 当前对象哈希值
+     */
     @Override
     public int hashCode() {
         final int prime = 31;
@@ -140,6 +200,12 @@ public class BrokerData implements Comparable<BrokerData> {
         return result;
     }
 
+    /**
+     * 判断两个 Broker 路由对象是否相等
+     *
+     * @param obj 待比较对象
+     * @return 相等时返回 true
+     */
     @Override
     public boolean equals(Object obj) {
         if (this == obj) {
@@ -162,11 +228,22 @@ public class BrokerData implements Comparable<BrokerData> {
         return StringUtils.equals(brokerName, other.brokerName);
     }
 
+    /**
+     * 生成对象可读字符串
+     *
+     * @return 当前对象字符串
+     */
     @Override
     public String toString() {
         return "BrokerData [brokerName=" + brokerName + ", brokerAddrs=" + brokerAddrs + ", enableActingMaster=" + enableActingMaster + "]";
     }
 
+    /**
+     * 按 Broker 名称进行字典序比较
+     *
+     * @param o 另一个 Broker 路由对象
+     * @return 比较结果
+     */
     @Override
     public int compareTo(BrokerData o) {
         return this.brokerName.compareTo(o.getBrokerName());

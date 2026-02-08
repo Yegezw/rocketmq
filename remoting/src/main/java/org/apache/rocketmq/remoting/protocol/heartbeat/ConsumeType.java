@@ -17,19 +17,37 @@
 
 /**
  * $Id: ConsumeType.java 1835 2013-05-16 02:00:50Z vintagewang@apache.org $
+ * 消费类型枚举
  */
 package org.apache.rocketmq.remoting.protocol.heartbeat;
 
 public enum ConsumeType {
 
+    /**
+     * 主动拉取消费
+     */
     CONSUME_ACTIVELY("PULL"),
 
+    /**
+     * 被动推送消费
+     */
     CONSUME_PASSIVELY("PUSH"),
 
+    /**
+     * POP 消费模式
+     */
     CONSUME_POP("POP");
 
+    /**
+     * 类型展示值
+     */
     private String typeCN;
 
+    /**
+     * 创建消费类型枚举值
+     *
+     * @param typeCN 类型展示值
+     */
     ConsumeType(String typeCN) {
         this.typeCN = typeCN;
     }

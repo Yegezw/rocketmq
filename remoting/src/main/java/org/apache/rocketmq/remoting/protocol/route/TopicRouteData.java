@@ -17,6 +17,7 @@
 
 /**
  * $Id: TopicRouteData.java 1835 2013-05-16 02:00:50Z vintagewang@apache.org $
+ * Topic 路由数据
  */
 package org.apache.rocketmq.remoting.protocol.route;
 
@@ -31,19 +32,43 @@ import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 import org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo;
 
 public class TopicRouteData extends RemotingSerializable {
+    /**
+     * 顺序主题配置串
+     */
     private String orderTopicConf;
+    /**
+     * 队列路由列表
+     */
     private List<QueueData> queueDatas;
+    /**
+     * Broker 路由列表
+     */
     private List<BrokerData> brokerDatas;
+    /**
+     * 过滤服务表
+     */
     private HashMap<String/* brokerAddr */, List<String>/* Filter Server */> filterServerTable;
     //It could be null or empty
+    // 该字段可为 null 或空映射
+    /**
+     * 静态主题映射信息
+     */
     private Map<String/*brokerName*/, TopicQueueMappingInfo> topicQueueMappingByBroker;
 
+    /**
+     * 创建空 Topic 路由数据
+     */
     public TopicRouteData() {
         queueDatas = new ArrayList<>();
         brokerDatas = new ArrayList<>();
         filterServerTable = new HashMap<>();
     }
 
+    /**
+     * 使用已有路由数据创建副本
+     *
+     * @param topicRouteData 源路由数据
+     */
     public TopicRouteData(TopicRouteData topicRouteData) {
         this.queueDatas = new ArrayList<>();
         this.brokerDatas = new ArrayList<>();
@@ -67,6 +92,12 @@ public class TopicRouteData extends RemotingSerializable {
         }
     }
 
+    /**
+     * 执行浅拷贝
+     * 列表和映射会创建新容器, 元素对象沿用原引用
+     *
+     * @return 浅拷贝后的路由数据
+     */
     public TopicRouteData cloneTopicRouteData() {
         TopicRouteData topicRouteData = new TopicRouteData();
         topicRouteData.setQueueDatas(new ArrayList<>());
@@ -84,24 +115,34 @@ public class TopicRouteData extends RemotingSerializable {
         return topicRouteData;
     }
 
+    /**
+     * 执行深拷贝
+     * 队列和 Broker 会逐项复制, 映射信息会复制为独立对象
+     *
+     * @return 深拷贝后的路由数据
+     */
     public TopicRouteData deepCloneTopicRouteData() {
         TopicRouteData topicRouteData = new TopicRouteData();
 
         topicRouteData.setOrderTopicConf(this.orderTopicConf);
 
+        // 复制队列路由条目
         for (final QueueData queueData : this.queueDatas) {
             topicRouteData.getQueueDatas().add(new QueueData(queueData));
         }
 
+        // 复制 Broker 路由条目
         for (final BrokerData brokerData : this.brokerDatas) {
             topicRouteData.getBrokerDatas().add(new BrokerData(brokerData));
         }
 
+        // 复制过滤服务映射
         for (final Map.Entry<String, List<String>> listEntry : this.filterServerTable.entrySet()) {
             topicRouteData.getFilterServerTable().put(listEntry.getKey(),
                 new ArrayList<>(listEntry.getValue()));
         }
         if (this.topicQueueMappingByBroker != null) {
+            // 逐项复制静态主题映射信息
             Map<String, TopicQueueMappingInfo> cloneMap = new HashMap<>(this.topicQueueMappingByBroker.size());
             for (final Map.Entry<String, TopicQueueMappingInfo> entry : this.getTopicQueueMappingByBroker().entrySet()) {
                 TopicQueueMappingInfo topicQueueMappingInfo = new TopicQueueMappingInfo(entry.getValue().getTopic(), entry.getValue().getTotalQueues(), entry.getValue().getBname(), entry.getValue().getEpoch());
@@ -117,6 +158,13 @@ public class TopicRouteData extends RemotingSerializable {
         return topicRouteData;
     }
 
+    /**
+     * 判断当前路由与旧路由是否发生变化
+     * 比较前会对队列和 Broker 列表排序以消除顺序影响
+     *
+     * @param oldData 旧路由数据
+     * @return 路由发生变化时返回 true
+     */
     public boolean topicRouteDataChanged(TopicRouteData oldData) {
         if (oldData == null)
             return true;
@@ -169,6 +217,11 @@ public class TopicRouteData extends RemotingSerializable {
         this.topicQueueMappingByBroker = topicQueueMappingByBroker;
     }
 
+    /**
+     * 计算对象哈希值
+     *
+     * @return 当前对象哈希值
+     */
     @Override
     public int hashCode() {
         final int prime = 31;
@@ -181,6 +234,12 @@ public class TopicRouteData extends RemotingSerializable {
         return result;
     }
 
+    /**
+     * 判断两个 Topic 路由对象是否相等
+     *
+     * @param obj 待比较对象
+     * @return 相等时返回 true
+     */
     @Override
     public boolean equals(Object obj) {
         if (this == obj)
@@ -218,6 +277,11 @@ public class TopicRouteData extends RemotingSerializable {
         return true;
     }
 
+    /**
+     * 生成对象可读字符串
+     *
+     * @return 当前对象字符串
+     */
     @Override
     public String toString() {
         return "TopicRouteData [orderTopicConf=" + orderTopicConf + ", queueDatas=" + queueDatas

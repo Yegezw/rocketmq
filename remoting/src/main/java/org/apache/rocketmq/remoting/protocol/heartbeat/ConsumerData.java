@@ -17,6 +17,7 @@
 
 /**
  * $Id: ConsumerData.java 1835 2013-05-16 02:00:50Z vintagewang@apache.org $
+ * 消费者心跳数据
  */
 package org.apache.rocketmq.remoting.protocol.heartbeat;
 
@@ -25,11 +26,29 @@ import java.util.Set;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 
 public class ConsumerData {
+    /**
+     * 消费者组名称
+     */
     private String groupName;
+    /**
+     * 消费类型
+     */
     private ConsumeType consumeType;
+    /**
+     * 消息模型
+     */
     private MessageModel messageModel;
+    /**
+     * 消费起始位点策略
+     */
     private ConsumeFromWhere consumeFromWhere;
+    /**
+     * 订阅数据集合
+     */
     private Set<SubscriptionData> subscriptionDataSet = new HashSet<>();
+    /**
+     * 是否启用单元化模式
+     */
     private boolean unitMode;
 
     public String getGroupName() {
@@ -80,6 +99,11 @@ public class ConsumerData {
         this.unitMode = isUnitMode;
     }
 
+    /**
+     * 生成对象可读字符串
+     *
+     * @return 当前对象字符串
+     */
     @Override
     public String toString() {
         return "ConsumerData [groupName=" + groupName + ", consumeType=" + consumeType + ", messageModel="

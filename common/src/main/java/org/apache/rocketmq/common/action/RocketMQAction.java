@@ -20,12 +20,30 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import org.apache.rocketmq.common.resource.ResourceType;
 
+/**
+ * 请求码到鉴权动作的注解定义
+ */
 @Retention(RetentionPolicy.RUNTIME)
 public @interface RocketMQAction {
 
+    /**
+     * 对应的请求码
+     *
+     * @return 请求码值
+     */
     int value();
 
+    /**
+     * 资源类型
+     *
+     * @return 资源类型
+     */
     ResourceType resource() default ResourceType.UNKNOWN;
 
+    /**
+     * 允许执行的动作集合
+     *
+     * @return 动作数组
+     */
     Action[] action();
 }

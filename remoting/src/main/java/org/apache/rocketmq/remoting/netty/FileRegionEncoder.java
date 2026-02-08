@@ -33,22 +33,39 @@ import java.nio.channels.WritableByteChannel;
  *     to encrypt transmission, data being sent should go through the {@link SslHandler}. This encoder ensures this
  *     process.
  * </p>
+ * <p>
+ *     默认情况下, file region 会直接传输到 socket channel, 这种方式称为 zero copy<br>
+ *     当需要加密传输时, 发送数据应经过 {@link SslHandler}<br>
+ *     该编码器用于确保这一过程
+ * </p>
  */
 public class FileRegionEncoder extends MessageToByteEncoder<FileRegion> {
 
     /**
      * Encode a message into a {@link io.netty.buffer.ByteBuf}. This method will be called for each written message that
      * can be handled by this encoder.
+     * <br>
+     * 将消息编码到 {@link io.netty.buffer.ByteBuf} 中, 此方法会在每次写入且可由当前编码器处理的消息上调用
      *
      * @param ctx the {@link io.netty.channel.ChannelHandlerContext} which this {@link
-     * io.netty.handler.codec.MessageToByteEncoder} belongs to
-     * @param msg the message to encode
-     * @param out the {@link io.netty.buffer.ByteBuf} into which the encoded message will be written
-     * @throws Exception is thrown if an error occurs
+     * io.netty.handler.codec.MessageToByteEncoder} belongs to<br>
+     *            当前 {@link io.netty.handler.codec.MessageToByteEncoder} 所属的 {@link io.netty.channel.ChannelHandlerContext}
+     * @param msg the message to encode<br>
+     *            需要编码的消息
+     * @param out the {@link io.netty.buffer.ByteBuf} into which the encoded message will be written<br>
+     *            编码结果将写入的 {@link io.netty.buffer.ByteBuf}
+     * @throws Exception is thrown if an error occurs<br>当发生错误时抛出异常
      */
     @Override
     protected void encode(ChannelHandlerContext ctx, FileRegion msg, final ByteBuf out) throws Exception {
+        // 构建中间写通道, 将 FileRegion 内容写入 out, 以便后续由 SslHandler 处理
         WritableByteChannel writableByteChannel = new WritableByteChannel() {
+            /**
+             * 将 ByteBuffer 中的数据写入目标 ByteBuf
+             *
+             * @param src 待写入的源缓冲区
+             * @return 本次实际写入的字节数
+             */
             @Override
             public int write(ByteBuffer src) {
                 int prev = out.writerIndex();
@@ -56,18 +73,30 @@ public class FileRegionEncoder extends MessageToByteEncoder<FileRegion> {
                 return out.writerIndex() - prev;
             }
 
+            /**
+             * 返回当前通道是否可用
+             *
+             * @return 始终返回 true
+             */
             @Override
             public boolean isOpen() {
                 return true;
             }
 
+            /**
+             * 关闭当前通道
+             *
+             * @throws IOException 关闭时可能抛出的 IO 异常
+             */
             @Override
             public void close() throws IOException {
             }
         };
 
+        // 记录总传输量, 用于控制传输循环
         long toTransfer = msg.count();
 
+        // 持续传输直到剩余字节数为 0
         while (true) {
             long transferred = msg.transferred();
             if (toTransfer - transferred <= 0) {

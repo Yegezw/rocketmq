@@ -139,6 +139,9 @@ public class CountDownLatch2 {
         return sync.getCount();
     }
 
+    /**
+     * 可以重置的 CountDownLatch
+     */
     public void reset() {
         sync.reset();
     }

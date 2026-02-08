@@ -16,8 +16,14 @@
  */
 package org.apache.rocketmq.remoting.rpc;
 
+/**
+ * Topic 维度请求头抽象基类
+ */
 public abstract class TopicRequestHeader extends RpcRequestHeader {
     //logical
+    /**
+     * 逻辑队列标记
+     */
     protected Boolean lo;
 
     public abstract String getTopic();

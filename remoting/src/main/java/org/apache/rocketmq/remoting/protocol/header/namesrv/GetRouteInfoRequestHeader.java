@@ -17,6 +17,7 @@
 
 /**
  * $Id: GetRouteInfoRequestHeader.java 1835 2013-05-16 02:00:50Z vintagewang@apache.org $
+ * 按主题获取路由信息请求头
  */
 package org.apache.rocketmq.remoting.protocol.header.namesrv;
 
@@ -32,12 +33,24 @@ import org.apache.rocketmq.remoting.rpc.TopicRequestHeader;
 @RocketMQAction(value = RequestCode.GET_ROUTEINFO_BY_TOPIC, resource = ResourceType.CLUSTER, action = Action.GET)
 public class GetRouteInfoRequestHeader extends TopicRequestHeader {
 
+    /**
+     * 目标主题名称
+     */
     @CFNotNull
     private String topic;
 
+    /**
+     * 是否仅接受标准 JSON 路由数据
+     */
     @CFNullable
     private Boolean acceptStandardJsonOnly;
 
+    /**
+     * 校验请求头字段<br>
+     * 当前请求头依赖注解进行基础校验, 无额外校验逻辑
+     *
+     * @throws RemotingCommandException 字段校验失败时抛出
+     */
     @Override
     public void checkFields() throws RemotingCommandException {
     }

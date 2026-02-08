@@ -19,43 +19,106 @@ package org.apache.rocketmq.common;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.TypeReference;
 import com.alibaba.fastjson.annotation.JSONField;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
 import org.apache.rocketmq.common.attribute.TopicMessageType;
 import org.apache.rocketmq.common.constant.PermName;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+
 import static org.apache.rocketmq.common.TopicAttributes.TOPIC_MESSAGE_TYPE_ATTRIBUTE;
 
+/**
+ * Topic 配置模型, 用于描述 Topic 的基础元数据
+ */
 public class TopicConfig {
+    /**
+     * Topic 配置编码分隔符
+     */
     private static final String SEPARATOR = " ";
+    /**
+     * 默认读队列数量
+     */
     public static int defaultReadQueueNums = 16;
+    /**
+     * 默认写队列数量
+     */
     public static int defaultWriteQueueNums = 16;
+    /**
+     * Fastjson 反序列化类型引用, 用于解析 attributes 字段
+     */
     private static final TypeReference<Map<String, String>> ATTRIBUTES_TYPE_REFERENCE = new TypeReference<Map<String, String>>() {
     };
+    /**
+     * Topic 名称
+     */
     private String topicName;
+    /**
+     * Topic 读队列数量
+     */
     private int readQueueNums = defaultReadQueueNums;
+    /**
+     * Topic 写队列数量
+     */
     private int writeQueueNums = defaultWriteQueueNums;
+    /**
+     * Topic 权限位, 使用 PermName 中的读写掩码
+     */
     private int perm = PermName.PERM_READ | PermName.PERM_WRITE;
+    /**
+     * Topic 过滤类型
+     */
     private TopicFilterType topicFilterType = TopicFilterType.SINGLE_TAG;
+    /**
+     * Topic 系统标记位
+     */
     private int topicSysFlag = 0;
+    /**
+     * 是否为顺序 Topic
+     */
     private boolean order = false;
-    // Field attributes should not have ' ' char in key or value, otherwise will lead to decode failure.
+    // Field attributes should not have ' ' char in key or value, otherwise will lead to decode failure
+    /**
+     * Topic 的自定义属性, attributes 字段的键和值不能包含空格, 否则会导致 decode 失败
+     */
     private Map<String, String> attributes = new HashMap<>();
 
+    /**
+     * 创建空的 Topic 配置
+     */
     public TopicConfig() {
     }
 
+    /**
+     * 使用 Topic 名称创建配置
+     *
+     * @param topicName Topic 名称
+     */
     public TopicConfig(String topicName) {
         this.topicName = topicName;
     }
 
+    /**
+     * 使用名称和读写队列创建配置
+     *
+     * @param topicName      Topic 名称
+     * @param readQueueNums  读队列数量
+     * @param writeQueueNums 写队列数量
+     */
     public TopicConfig(String topicName, int readQueueNums, int writeQueueNums) {
         this.topicName = topicName;
         this.readQueueNums = readQueueNums;
         this.writeQueueNums = writeQueueNums;
     }
 
+    /**
+     * 使用名称、队列和权限创建配置
+     *
+     * @param topicName      Topic 名称
+     * @param readQueueNums  读队列数量
+     * @param writeQueueNums 写队列数量
+     * @param perm           权限位
+     */
     public TopicConfig(String topicName, int readQueueNums, int writeQueueNums, int perm) {
         this.topicName = topicName;
         this.readQueueNums = readQueueNums;
@@ -63,6 +126,15 @@ public class TopicConfig {
         this.perm = perm;
     }
 
+    /**
+     * 使用名称、队列、权限和系统标记创建配置
+     *
+     * @param topicName      Topic 名称
+     * @param readQueueNums  读队列数量
+     * @param writeQueueNums 写队列数量
+     * @param perm           权限位
+     * @param topicSysFlag   系统标记位
+     */
     public TopicConfig(String topicName, int readQueueNums, int writeQueueNums, int perm, int topicSysFlag) {
         this.topicName = topicName;
         this.readQueueNums = readQueueNums;
@@ -71,6 +143,11 @@ public class TopicConfig {
         this.topicSysFlag = topicSysFlag;
     }
 
+    /**
+     * 使用已有配置创建副本, attributes 字段为浅拷贝
+     *
+     * @param other 原始 Topic 配置
+     */
     public TopicConfig(TopicConfig other) {
         this.topicName = other.topicName;
         this.readQueueNums = other.readQueueNums;
@@ -82,24 +159,41 @@ public class TopicConfig {
         this.attributes = other.attributes;
     }
 
+    /**
+     * 按固定字段顺序将 Topic 配置编码为字符串
+     *
+     * @return 编码后的字符串
+     */
     public String encode() {
         StringBuilder sb = new StringBuilder();
+
         //[0]
+        // 字段索引 0: Topic 名称
         sb.append(this.topicName);
         sb.append(SEPARATOR);
+
         //[1]
+        // 字段索引 1: 读队列数量
         sb.append(this.readQueueNums);
         sb.append(SEPARATOR);
+
         //[2]
+        // 字段索引 2: 写队列数量
         sb.append(this.writeQueueNums);
         sb.append(SEPARATOR);
+
         //[3]
+        // 字段索引 3: 权限位
         sb.append(this.perm);
         sb.append(SEPARATOR);
+
         //[4]
+        // 字段索引 4: 过滤类型
         sb.append(this.topicFilterType);
         sb.append(SEPARATOR);
+
         //[5]
+        // 字段索引 5: 扩展属性 JSON
         if (attributes != null) {
             sb.append(JSON.toJSONString(attributes));
         }
@@ -107,24 +201,38 @@ public class TopicConfig {
         return sb.toString();
     }
 
+    /**
+     * 从编码字符串解析 Topic 配置
+     *
+     * @param in 编码字符串
+     * @return 解析是否成功
+     */
     public boolean decode(final String in) {
+        // 按分隔符拆分输入字符串
         String[] strs = in.split(SEPARATOR);
         if (strs.length >= 5) {
+            // 解析字段索引 0: Topic 名称
             this.topicName = strs[0];
 
+            // 解析字段索引 1: 读队列数量
             this.readQueueNums = Integer.parseInt(strs[1]);
 
+            // 解析字段索引 2: 写队列数量
             this.writeQueueNums = Integer.parseInt(strs[2]);
 
+            // 解析字段索引 3: 权限位
             this.perm = Integer.parseInt(strs[3]);
 
+            // 解析字段索引 4: 过滤类型
             this.topicFilterType = TopicFilterType.valueOf(strs[4]);
 
             if (strs.length >= 6) {
                 try {
+                    // 解析字段索引 5: 扩展属性 JSON
                     this.attributes = JSON.parseObject(strs[5], ATTRIBUTES_TYPE_REFERENCE.getType());
                 } catch (Exception e) {
-                    // ignore exception when parse failed, cause map's key/value can have ' ' char.
+                    // ignore exception when parse failed, cause map's key/value can have ' ' char
+                    // 解析失败时忽略异常, 因为 map 的键和值可能包含空格
                 }
             }
 
@@ -182,6 +290,11 @@ public class TopicConfig {
         this.topicSysFlag = topicSysFlag;
     }
 
+    /**
+     * 返回是否为顺序 Topic
+     *
+     * @return true 表示顺序 Topic
+     */
     public boolean isOrder() {
         return order;
     }
@@ -215,17 +328,27 @@ public class TopicConfig {
         attributes.put(TOPIC_MESSAGE_TYPE_ATTRIBUTE.getName(), topicMessageType.getValue());
     }
 
+    /**
+     * 比较两个 Topic 配置是否完全一致
+     *
+     * @param o 待比较对象
+     * @return true 表示内容一致
+     */
     @Override
     public boolean equals(Object o) {
+        // 同一对象引用直接判定为相等
         if (this == o) {
             return true;
         }
+
+        // 为空或类型不同时直接判定为不相等
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
 
         TopicConfig that = (TopicConfig) o;
 
+        // 逐项比较核心字段
         if (readQueueNums != that.readQueueNums) {
             return false;
         }
@@ -250,6 +373,11 @@ public class TopicConfig {
         return Objects.equals(attributes, that.attributes);
     }
 
+    /**
+     * 计算 Topic 配置的哈希值
+     *
+     * @return 当前对象哈希值
+     */
     @Override
     public int hashCode() {
         int result = topicName != null ? topicName.hashCode() : 0;
@@ -263,6 +391,11 @@ public class TopicConfig {
         return result;
     }
 
+    /**
+     * 返回便于日志输出的 Topic 配置文本
+     *
+     * @return Topic 配置描述字符串
+     */
     @Override
     public String toString() {
         return "TopicConfig [topicName=" + topicName + ", readQueueNums=" + readQueueNums

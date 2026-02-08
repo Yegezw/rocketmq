@@ -20,43 +20,105 @@ import org.apache.rocketmq.remoting.common.TlsMode;
 
 import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_ENABLE;
 
+/**
+ * Netty 客户端配置
+ */
 public class NettyClientConfig {
     /**
      * Worker thread number
+     * <br>
+     * Worker 线程数量
      */
     private int clientWorkerThreads = NettySystemConfig.clientWorkerSize;
+    /**
+     * 回调执行线程数量, 默认值为当前机器可用 CPU 核数
+     */
     private int clientCallbackExecutorThreads = Runtime.getRuntime().availableProcessors();
+    /**
+     * 单向调用并发信号量阈值, 用于限制 oneway 请求并发数量
+     */
     private int clientOnewaySemaphoreValue = NettySystemConfig.CLIENT_ONEWAY_SEMAPHORE_VALUE;
+    /**
+     * 异步调用并发信号量阈值, 用于限制 async 请求并发数量
+     */
     private int clientAsyncSemaphoreValue = NettySystemConfig.CLIENT_ASYNC_SEMAPHORE_VALUE;
+    /**
+     * 建立连接超时时间, 单位为毫秒
+     */
     private int connectTimeoutMillis = NettySystemConfig.connectTimeoutMillis;
+    /**
+     * 通道非活跃检查间隔, 单位为毫秒
+     */
     private long channelNotActiveInterval = 1000 * 60;
 
+    /**
+     * 是否扫描可用 NameServer, true 表示启用扫描
+     */
     private boolean isScanAvailableNameSrv = true;
 
     /**
      * IdleStateEvent will be triggered when neither read nor write was performed for
      * the specified period of this time. Specify {@code 0} to disable
+     * <br>
+     * 当在指定时间段内既没有执行读操作也没有执行写操作时, 会触发 IdleStateEvent<br>
+     * 指定 {@code 0} 可禁用该行为
      */
     private int clientChannelMaxIdleTimeSeconds = NettySystemConfig.clientChannelMaxIdleTimeSeconds;
 
+    /**
+     * 客户端 Socket 发送缓冲区大小
+     */
     private int clientSocketSndBufSize = NettySystemConfig.socketSndbufSize;
+    /**
+     * 客户端 Socket 接收缓冲区大小
+     */
     private int clientSocketRcvBufSize = NettySystemConfig.socketRcvbufSize;
+    /**
+     * 是否启用客户端 Pooled ByteBuf 分配器
+     */
     private boolean clientPooledByteBufAllocatorEnable = false;
+    /**
+     * 请求超时后是否主动关闭 Socket
+     */
     private boolean clientCloseSocketIfTimeout = NettySystemConfig.clientCloseSocketIfTimeout;
 
+    /**
+     * 是否启用 TLS, 默认值由系统属性与 TLS 模式共同决定
+     */
     private boolean useTLS = Boolean.parseBoolean(System.getProperty(TLS_ENABLE,
         String.valueOf(TlsSystemConfig.tlsMode == TlsMode.ENFORCING)));
 
+    /**
+     * Socks 代理配置 JSON 字符串
+     */
     private String socksProxyConfig = "{}";
 
+    /**
+     * 写缓冲区高水位线
+     */
     private int writeBufferHighWaterMark = NettySystemConfig.writeBufferHighWaterMark;
+    /**
+     * 写缓冲区低水位线
+     */
     private int writeBufferLowWaterMark = NettySystemConfig.writeBufferLowWaterMark;
 
+    /**
+     * 是否禁用回调执行器
+     */
     private boolean disableCallbackExecutor = false;
+    /**
+     * 是否禁用 Netty Worker Group
+     */
     private boolean disableNettyWorkerGroup = false;
 
+    /**
+     * 最大重连间隔时间, 单位为秒
+     */
     private long maxReconnectIntervalTimeSeconds = 60;
 
+    /**
+     * 收到 GoAway 后是否启用重连
+     */
     private boolean enableReconnectForGoAway = true;
 
     public boolean isClientCloseSocketIfTimeout() {

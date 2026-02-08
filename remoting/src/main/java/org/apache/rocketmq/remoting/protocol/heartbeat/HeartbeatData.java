@@ -17,6 +17,7 @@
 
 /**
  * $Id: HeartbeatData.java 1835 2013-05-16 02:00:50Z vintagewang@apache.org $
+ * 客户端心跳载荷
  */
 package org.apache.rocketmq.remoting.protocol.heartbeat;
 
@@ -26,10 +27,25 @@ import com.alibaba.fastjson.JSON;
 import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 
 public class HeartbeatData extends RemotingSerializable {
+    /**
+     * 客户端唯一标识
+     */
     private String clientID;
+    /**
+     * 生产者数据集合
+     */
     private Set<ProducerData> producerDataSet = new HashSet<>();
+    /**
+     * 消费者数据集合
+     */
     private Set<ConsumerData> consumerDataSet = new HashSet<>();
+    /**
+     * 心跳指纹值
+     */
     private int heartbeatFingerprint = 0;
+    /**
+     * 是否不携带订阅信息
+     */
     private boolean isWithoutSub = false;
 
     public String getClientID() {
@@ -72,22 +88,37 @@ public class HeartbeatData extends RemotingSerializable {
         isWithoutSub = withoutSub;
     }
 
+    /**
+     * 生成对象可读字符串
+     *
+     * @return 当前对象字符串
+     */
     @Override
     public String toString() {
         return "HeartbeatData [clientID=" + clientID + ", producerDataSet=" + producerDataSet
             + ", consumerDataSet=" + consumerDataSet + "]";
     }
 
+    /**
+     * 计算心跳内容指纹
+     * 该方法会忽略订阅版本和客户端标识等动态字段
+     *
+     * @return 指纹值
+     */
     public int computeHeartbeatFingerprint() {
+        // 使用深拷贝避免直接修改当前对象
         HeartbeatData heartbeatDataCopy = JSON.parseObject(JSON.toJSONString(this), HeartbeatData.class);
+        // 将订阅版本归零以消除时间戳差异
         for (ConsumerData consumerData : heartbeatDataCopy.getConsumerDataSet()) {
             for (SubscriptionData subscriptionData : consumerData.getSubscriptionDataSet()) {
                 subscriptionData.setSubVersion(0L);
             }
         }
+        // 将不参与比较的动态字段重置
         heartbeatDataCopy.setWithoutSub(false);
         heartbeatDataCopy.setHeartbeatFingerprint(0);
         heartbeatDataCopy.setClientID("");
+        // 序列化后计算哈希作为指纹
         return JSON.toJSONString(heartbeatDataCopy).hashCode();
     }
 }

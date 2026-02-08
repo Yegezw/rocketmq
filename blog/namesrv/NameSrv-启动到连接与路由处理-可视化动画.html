@@ -1,0 +1,3489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RocketMQ NameSrv 启动与路由处理可视化动画</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+    :root {
+      color-scheme: dark;
+      --bg: #070f1d;
+      --bg-soft: #0f172a;
+      --panel: rgba(15, 23, 42, 0.78);
+      --panel-strong: rgba(15, 23, 42, 0.94);
+      --panel-elev: rgba(30, 41, 59, 0.82);
+      --border: rgba(148, 163, 184, 0.24);
+      --text: #e2e8f0;
+      --text-strong: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-strong: #0ea5e9;
+      --accent-2: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --violet: #a78bfa;
+      --inbound: #38bdf8;
+      --outbound: #22c55e;
+      --internal: #a78bfa;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 10px;
+      --shadow: 0 20px 42px rgba(2, 6, 23, 0.5);
+      --shadow-soft: 0 10px 24px rgba(2, 6, 23, 0.35);
+      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --thread-main: rgba(59, 130, 246, 0.14);
+      --thread-netty: rgba(34, 197, 94, 0.14);
+      --thread-logic: rgba(167, 139, 250, 0.13);
+      --thread-data: rgba(245, 158, 11, 0.13);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      line-height: 1.5;
+      background:
+        radial-gradient(860px 460px at 8% -18%, rgba(56, 189, 248, 0.2), transparent 62%),
+        radial-gradient(860px 460px at 92% -16%, rgba(34, 197, 94, 0.16), transparent 62%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(7, 15, 29, 1));
+      overflow: auto;
+    }
+
+    .skip-link {
+      position: absolute;
+      left: 12px;
+      top: -48px;
+      z-index: 99;
+      padding: 8px 12px;
+      border-radius: 8px;
+      text-decoration: none;
+      background: #f8fafc;
+      color: #0f172a;
+      font-size: 12px;
+      font-weight: 600;
+      transition: top 0.2s ease;
+    }
+
+    .skip-link:focus {
+      top: 12px;
+    }
+
+    header {
+      min-height: 68px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-strong);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .title-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: clamp(16px, 1.35vw, 21px);
+      line-height: 1.2;
+      color: var(--text-strong);
+      letter-spacing: 0.2px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 64vw;
+    }
+
+    .status {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .status span {
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.75), rgba(15, 23, 42, 0.92));
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text);
+      padding: 5px 10px;
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.07);
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .container {
+      min-height: calc(100vh - 68px);
+      display: grid;
+      grid-template-columns: minmax(300px, 360px) minmax(660px, 1fr) minmax(280px, 330px);
+      grid-template-areas:
+        "left stage right"
+        "log log right";
+      grid-template-rows: 1fr minmax(240px, auto);
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .left-panel {
+      grid-area: left;
+      position: sticky;
+      top: 82px;
+      max-height: calc(100vh - 94px);
+      overflow: auto;
+    }
+
+    .stage-panel {
+      grid-area: stage;
+      min-width: 0;
+      position: relative;
+      overflow-x: auto;
+    }
+
+    .right-panel {
+      grid-area: right;
+      min-width: 0;
+    }
+
+    .log-panel {
+      grid-area: log;
+      min-width: 0;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.76));
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 12px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.72px;
+      font-family: var(--mono);
+    }
+
+    .group {
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.74), rgba(15, 23, 42, 0.85));
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 10px;
+      margin-bottom: 10px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .group:last-child {
+      margin-bottom: 0;
+    }
+
+    .group-title {
+      margin-bottom: 8px;
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      font-family: var(--mono);
+    }
+
+    .hint {
+      font-size: 10px;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-top: 6px;
+    }
+
+    .scenario-row {
+      display: grid;
+      gap: 7px;
+    }
+
+    button {
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.72), rgba(15, 23, 42, 0.94));
+      color: var(--text);
+      min-height: 42px;
+      padding: 8px 10px;
+      font-size: 11px;
+      font-family: var(--mono);
+      cursor: pointer;
+      transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(56, 189, 248, 0.58);
+      box-shadow: 0 8px 14px rgba(2, 6, 23, 0.4);
+    }
+
+    button:focus-visible {
+      outline: 2px solid rgba(56, 189, 248, 0.72);
+      outline-offset: 2px;
+    }
+
+    button.active {
+      border-color: rgba(56, 189, 248, 0.7);
+      color: var(--text-strong);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.32);
+    }
+
+    button.ghost {
+      border-style: dashed;
+    }
+
+    button.warn {
+      border-color: rgba(245, 158, 11, 0.48);
+      color: #fde68a;
+    }
+
+    button.secondary {
+      border-color: rgba(34, 197, 94, 0.45);
+      color: #bbf7d0;
+    }
+
+    .scenario-row button {
+      text-align: left;
+      display: grid;
+      gap: 5px;
+      align-content: center;
+      min-height: 54px;
+    }
+
+    .scenario-label {
+      font-size: 11px;
+      color: var(--text-strong);
+      font-weight: 600;
+      font-family: "IBM Plex Sans", sans-serif;
+    }
+
+    .scenario-desc {
+      font-size: 10px;
+      color: var(--muted);
+      line-height: 1.35;
+      font-family: "IBM Plex Sans", sans-serif;
+    }
+
+    .play-controls {
+      display: grid;
+      gap: 7px;
+    }
+
+    .play-row {
+      display: grid;
+      gap: 7px;
+    }
+
+    .play-row.row-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .play-row.row-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .speed-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 7px;
+      margin-top: 8px;
+    }
+
+    .speed-row button {
+      min-height: 34px;
+      padding: 6px;
+    }
+
+    .speed-row button.active {
+      border-color: rgba(34, 197, 94, 0.7);
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.26);
+      color: #bbf7d0;
+    }
+
+    #stepRange {
+      width: 100%;
+      accent-color: #22c55e;
+      cursor: pointer;
+    }
+
+    .progress-metrics {
+      margin-top: 6px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .legend {
+      display: grid;
+      gap: 8px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .pill {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(15, 23, 42, 0.72);
+      width: 100%;
+      line-height: 1.35;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      display: inline-block;
+      flex: 0 0 auto;
+    }
+
+    .dot.inbound {
+      background: var(--inbound);
+    }
+
+    .dot.outbound {
+      background: var(--outbound);
+    }
+
+    .dot.internal {
+      background: var(--internal);
+    }
+
+    .stage-toolbar {
+      margin-bottom: 8px;
+    }
+
+    .toolbar-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .scenario-badge {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 10px;
+      color: #bae6fd;
+      background: rgba(30, 41, 59, 0.7);
+      font-family: var(--mono);
+    }
+
+    .play-state {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 10px;
+      color: var(--muted);
+      background: rgba(15, 23, 42, 0.8);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+    }
+
+    .pulse-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #94a3b8;
+      box-shadow: 0 0 0 rgba(148, 163, 184, 0.4);
+    }
+
+    .pulse-dot.running {
+      background: #22c55e;
+      animation: pulse 1.5s infinite;
+    }
+
+    .stage-canvas {
+      position: relative;
+      min-height: 520px;
+    }
+
+    .flow-lines {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .flow-line {
+      stroke: rgba(148, 163, 184, 0.72);
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      filter: drop-shadow(0 0 6px rgba(148, 163, 184, 0.55));
+    }
+
+    .flow-line.static {
+      opacity: 0.82;
+    }
+
+    .flow-line.inbound {
+      stroke: rgba(56, 189, 248, 0.95);
+      filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.72));
+    }
+
+    .flow-line.outbound {
+      stroke: rgba(34, 197, 94, 0.95);
+      filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.7));
+    }
+
+    .flow-line.internal {
+      stroke: rgba(167, 139, 250, 0.95);
+      filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.7));
+    }
+
+    .flow-dot {
+      fill: rgba(56, 189, 248, 0.95);
+      filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.7));
+    }
+
+    .flow-dot.outbound {
+      fill: rgba(34, 197, 94, 0.95);
+      filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.65));
+    }
+
+    .flow-dot.internal {
+      fill: rgba(167, 139, 250, 0.95);
+      filter: drop-shadow(0 0 4px rgba(167, 139, 250, 0.65));
+    }
+
+    .stage-grid {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .lane-section {
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      padding: 14px;
+      background: rgba(15, 23, 42, 0.64);
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.06);
+    }
+
+    .lane-section.main {
+      background: var(--thread-main);
+    }
+
+    .lane-section.netty {
+      background: var(--thread-netty);
+    }
+
+    .lane-section.logic {
+      background: var(--thread-logic);
+    }
+
+    .lane-section.data {
+      background: var(--thread-data);
+    }
+
+    .lane-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: rgba(15, 23, 42, 0.84);
+      margin-bottom: 12px;
+    }
+
+    .lane-content {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .node {
+      position: relative;
+      width: fit-content;
+      padding: 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.72);
+      color: var(--text);
+      font-size: 11px;
+      box-shadow: 0 12px 22px rgba(2, 6, 23, 0.4);
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      z-index: 2;
+      cursor: pointer;
+      outline: none;
+      min-height: 0;
+      white-space: nowrap;
+    }
+
+    .node:hover {
+      transform: translateY(-1px);
+      border-color: rgba(56, 189, 248, 0.45);
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    .node:focus-visible {
+      outline: 2px solid rgba(56, 189, 248, 0.65);
+      outline-offset: 2px;
+    }
+
+    .node .title {
+      margin-bottom: 4px;
+      font-size: 12px;
+      color: var(--text-strong);
+      font-weight: 600;
+    }
+
+    .node .thread-tag {
+      display: inline-flex;
+      margin-top: 0;
+      margin-left: 8px;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .node.active {
+      border-color: rgba(56, 189, 248, 0.82);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.42);
+      transform: translateY(-1px);
+    }
+
+    .node.inbound.active {
+      border-color: rgba(56, 189, 248, 0.9);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.58);
+    }
+
+    .node.outbound.active {
+      border-color: rgba(34, 197, 94, 0.9);
+      box-shadow: 0 0 18px rgba(34, 197, 94, 0.56);
+    }
+
+    .node.internal.active {
+      border-color: rgba(167, 139, 250, 0.86);
+      box-shadow: 0 0 18px rgba(167, 139, 250, 0.52);
+    }
+
+    .node.selected {
+      border-color: rgba(245, 158, 11, 0.85);
+      box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.6), 0 12px 22px rgba(2, 6, 23, 0.44);
+    }
+
+    .method-list,
+    .source-list {
+      margin: 0;
+      padding-left: 16px;
+      display: grid;
+      gap: 7px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .method-list li,
+    .source-list li {
+      line-height: 1.4;
+    }
+
+    .source-list .symbol {
+      color: var(--text-strong);
+      font-family: var(--mono);
+      font-size: 9px;
+      display: inline-block;
+      margin-bottom: 2px;
+    }
+
+    .source-list .location {
+      color: #bae6fd;
+      font-family: var(--mono);
+      display: block;
+      font-size: 9px;
+      margin-bottom: 2px;
+      word-break: break-all;
+    }
+
+    .advanced-panel {
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.68);
+      padding: 8px;
+    }
+
+    .advanced-panel summary {
+      cursor: pointer;
+      font-size: 10px;
+      color: var(--text-strong);
+      font-family: var(--mono);
+      list-style: none;
+    }
+
+    .advanced-panel summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .advanced-content {
+      margin-top: 8px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .advanced-block {
+      border: 1px dashed rgba(148, 163, 184, 0.28);
+      border-radius: 8px;
+      padding: 7px 8px;
+      background: rgba(15, 23, 42, 0.62);
+    }
+
+    .advanced-key {
+      font-size: 9px;
+      color: var(--accent);
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+      margin-bottom: 4px;
+    }
+
+    .advanced-list {
+      margin: 0;
+      padding-left: 14px;
+      display: grid;
+      gap: 4px;
+      font-size: 10px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .node-inspector {
+      border: 1px dashed rgba(148, 163, 184, 0.35);
+      border-radius: 10px;
+      padding: 9px;
+      font-size: 10px;
+      color: var(--muted);
+      background: rgba(15, 23, 42, 0.65);
+      line-height: 1.5;
+    }
+
+    .flow-steps {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .flow-step {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.84);
+      padding: 8px;
+      font-size: 10px;
+      color: var(--muted);
+      line-height: 1.45;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+      display: grid;
+      gap: 5px;
+      width: fit-content;
+      max-width: 100%;
+    }
+
+    .flow-step:hover {
+      transform: translateY(-1px);
+      border-color: rgba(56, 189, 248, 0.45);
+    }
+
+    .flow-step.active {
+      border-color: rgba(34, 197, 94, 0.7);
+      color: var(--text-strong);
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.35);
+    }
+
+    .flow-step .step-title {
+      color: var(--text-strong);
+      font-size: 11px;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .flow-step .step-meta {
+      font-size: 9px;
+      color: var(--muted);
+      font-family: var(--mono);
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .log {
+      height: 170px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      background: rgba(15, 23, 42, 0.85);
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .log .line {
+      margin-bottom: 5px;
+      line-height: 1.45;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      font-size: 9px;
+      color: var(--muted);
+      background: rgba(15, 23, 42, 0.84);
+      font-family: var(--mono);
+      width: fit-content;
+    }
+
+    .tag.inbound {
+      border-color: rgba(56, 189, 248, 0.6);
+      color: #bae6fd;
+    }
+
+    .tag.outbound {
+      border-color: rgba(34, 197, 94, 0.6);
+      color: #bbf7d0;
+    }
+
+    .tag.internal {
+      border-color: rgba(167, 139, 250, 0.6);
+      color: #ddd6fe;
+    }
+
+    .empty {
+      margin: 0;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.4;
+    }
+
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+      }
+      70% {
+        box-shadow: 0 0 0 9px rgba(34, 197, 94, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+      }
+    }
+
+    @media (max-width: 1440px) {
+      .container {
+        grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+        grid-template-areas:
+          "left stage"
+          "left right"
+          "log log";
+        grid-template-rows: auto auto minmax(220px, auto);
+      }
+
+      .left-panel {
+        max-height: none;
+        position: static;
+      }
+    }
+
+    @media (max-width: 1060px) {
+      .container {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "left"
+          "stage"
+          "right"
+          "log";
+        grid-template-rows: auto;
+      }
+
+      .subtitle {
+        max-width: 100%;
+      }
+
+      .stage-canvas {
+        min-height: 420px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">跳转到主要内容</a>
+  <header>
+    <div class="title-wrap">
+      <h1>RocketMQ NameSrv 启动与请求处理动画流程图</h1>
+      <div class="subtitle">覆盖启动、注册、查路由、心跳、下线清理、Topic 管理、权限控制、配置管理与集群信息查询</div>
+    </div>
+    <div class="status">
+      <span id="status-step">当前步骤: -</span>
+      <span id="status-thread">线程: -</span>
+      <span id="status-request">请求码: -</span>
+      <span id="status-channel">连接状态: -</span>
+    </div>
+  </header>
+
+  <main class="container" id="mainContent">
+    <section class="panel left-panel">
+      <h2>控制台</h2>
+
+      <div class="group">
+        <div class="group-title">流程场景（1~9）</div>
+        <div class="scenario-row">
+          <button data-scenario="main" class="active" aria-pressed="true" aria-label="切换主流程">
+            <span class="scenario-label">1. 主流程：启动到请求处理总览</span>
+            <span class="scenario-desc">NameSrv 启动、接收连接、分发到处理器并返回响应</span>
+          </button>
+          <button data-scenario="broker" aria-pressed="false" aria-label="切换到 Broker 注册链路">
+            <span class="scenario-label">2. 子流程：Broker 注册链路</span>
+            <span class="scenario-desc">REGISTER_BROKER 全链路（校验、写锁、路由更新、响应）</span>
+          </button>
+          <button data-scenario="route" aria-pressed="false" aria-label="切换到客户端查路由链路">
+            <span class="scenario-label">3. 子流程：客户端查路由链路</span>
+            <span class="scenario-desc">GET_ROUTEINFO_BY_TOPIC（ClientRequestProcessor、读锁、回包）</span>
+          </button>
+          <button data-scenario="heartbeat" aria-pressed="false" aria-label="切换到 Broker 心跳与配置版本链路">
+            <span class="scenario-label">4. 子流程：心跳与配置版本</span>
+            <span class="scenario-desc">BROKER_HEARTBEAT / QUERY_DATA_VERSION 轻量更新链路</span>
+          </button>
+          <button data-scenario="offline" aria-pressed="false" aria-label="切换到 Broker 下线与清理链路">
+            <span class="scenario-label">5. 子流程：Broker 下线与清理</span>
+            <span class="scenario-desc">UNREGISTER_BROKER + 被动断链 + 批量注销清理</span>
+          </button>
+          <button data-scenario="topic-admin" aria-pressed="false" aria-label="切换到 Topic 管理链路">
+            <span class="scenario-label">6. 子流程：Topic 管理与查询</span>
+            <span class="scenario-desc">注册/删除 Topic 与 Topic 列表查询控制开关</span>
+          </button>
+          <button data-scenario="perm" aria-pressed="false" aria-label="切换到写权限控制链路">
+            <span class="scenario-label">7. 子流程：写权限控制链路</span>
+            <span class="scenario-desc">WIPE/ADD_WRITE_PERM_OF_BROKER 更新 QueueData 权限</span>
+          </button>
+          <button data-scenario="config" aria-pressed="false" aria-label="切换到 KV 与配置链路">
+            <span class="scenario-label">8. 子流程：KV 与 NameSrv 配置</span>
+            <span class="scenario-desc">PUT/GET/DELETE_KV_CONFIG 与 UPDATE/GET_NAMESRV_CONFIG</span>
+          </button>
+          <button data-scenario="cluster" aria-pressed="false" aria-label="切换到集群信息查询链路">
+            <span class="scenario-label">9. 子流程：集群信息查询链路</span>
+            <span class="scenario-desc">GET_BROKER_CLUSTER_INFO / GET_BROKER_MEMBER_GROUP</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">播放控制</div>
+        <div class="play-controls">
+          <div class="play-row row-3">
+            <button id="btn-reset" class="ghost" aria-label="重置流程">重置</button>
+            <button id="btn-play" class="secondary" aria-label="播放流程">播放</button>
+            <button id="btn-pause" class="warn" aria-label="暂停流程">暂停</button>
+          </div>
+          <div class="play-row row-2">
+            <button id="btn-prev" class="ghost" aria-label="执行上一步">上一步</button>
+            <button id="btn-next" aria-label="执行下一步">下一步</button>
+          </div>
+        </div>
+        <div class="speed-row">
+          <button data-speed="0.75">0.75x</button>
+          <button data-speed="1" class="active">1.0x</button>
+          <button data-speed="1.5">1.5x</button>
+          <button data-speed="2">2.0x</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">进度导航</div>
+        <input id="stepRange" type="range" min="0" max="0" step="1" value="0" aria-label="步骤导航" />
+        <div class="progress-metrics">
+          <span id="stepProgressText">进度 0 / 0</span>
+          <span id="stepProgressPercent">0%</span>
+        </div>
+        <div class="hint">拖动滑块可直接跳转，自动播放会先暂停</div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">快捷键</div>
+        <div class="hint">Space：播放/暂停，←/→：上一步/下一步</div>
+        <div class="hint">R：重置，1~9：切换对应场景（按场景按钮编号）</div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">图例</div>
+        <div class="legend">
+          <div class="pill"><span class="dot inbound"></span>入站链路：连接/解码/请求进入 NameSrv</div>
+          <div class="pill"><span class="dot internal"></span>内部链路：分发、路由表读写、元数据装配</div>
+          <div class="pill"><span class="dot outbound"></span>出站链路：编码与响应回写客户端/Broker</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel stage-panel">
+      <h2>流程图（NameSrv）</h2>
+      <div class="stage-toolbar">
+        <div class="toolbar-row">
+          <div id="scenarioBadge" class="scenario-badge">场景：主流程</div>
+          <div class="play-state"><span id="runDot" class="pulse-dot"></span><span id="runStateText">状态：已暂停</span></div>
+        </div>
+      </div>
+
+      <div class="stage-canvas">
+        <svg id="flowLines" class="flow-lines" aria-hidden="true"></svg>
+        <div class="stage-grid">
+          <div class="lane-section main">
+            <div class="lane-title">主线程：NameSrv 启动与 Netty Server 初始化</div>
+            <div class="lane-content main">
+              <div class="node" data-node="namesrv-startup" role="button" tabindex="0" aria-label="NamesrvStartup">
+                <div class="title">NamesrvStartup</div>
+                解析配置，构建 Controller
+                <div class="thread-tag">main thread</div>
+              </div>
+              <div class="node" data-node="namesrv-controller" role="button" tabindex="0" aria-label="NamesrvController">
+                <div class="title">NamesrvController</div>
+                initialize/start 生命周期
+                <div class="thread-tag">main thread</div>
+              </div>
+              <div class="node" data-node="netty-remoting-server" role="button" tabindex="0" aria-label="NettyRemotingServer">
+                <div class="title">NettyRemotingServer</div>
+                注册处理器、接收请求
+                <div class="thread-tag">main thread</div>
+              </div>
+              <div class="node" data-node="netty-remoting-client" role="button" tabindex="0" aria-label="NettyRemotingClient">
+                <div class="title">NettyRemotingClient</div>
+                NameSrv 对外通知（如最小 BrokerId 变更）
+                <div class="thread-tag">main thread</div>
+              </div>
+              <div class="node" data-node="server-bootstrap" role="button" tabindex="0" aria-label="ServerBootstrap">
+                <div class="title">ServerBootstrap</div>
+                bind(9876) + pipeline
+                <div class="thread-tag">main thread</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane-section netty">
+            <div class="lane-title">Netty 接入链路：I/O + defaultEventExecutorGroup（默认）</div>
+            <div class="lane-content netty">
+              <div class="node" data-node="boss-selector" role="button" tabindex="0" aria-label="Boss Selector">
+                <div class="title">Boss Selector</div>
+                OP_ACCEPT 监听
+                <div class="thread-tag">boss eventLoop</div>
+              </div>
+              <div class="node" data-node="accept-channel" role="button" tabindex="0" aria-label="Child Channel">
+                <div class="title">NioSocketChannel</div>
+                accept 后 child channel
+                <div class="thread-tag">worker eventLoop</div>
+              </div>
+              <div class="node" data-node="decoder" role="button" tabindex="0" aria-label="NettyDecoder">
+                <div class="title">NettyDecoder</div>
+                ByteBuf -> RemotingCommand
+                <div class="thread-tag">defaultEventExecutorGroup（默认）</div>
+              </div>
+              <div class="node" data-node="netty-handler" role="button" tabindex="0" aria-label="NettyServerHandler">
+                <div class="title">NettyServerHandler</div>
+                channelRead0 进入 remoting
+                <div class="thread-tag">defaultEventExecutorGroup（默认）</div>
+              </div>
+              <div class="node" data-node="response-write" role="button" tabindex="0" aria-label="NettyEncoder">
+                <div class="title">NettyEncoder</div>
+                RemotingCommand 编码并回写
+                <div class="thread-tag">defaultEventExecutorGroup（默认）</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane-section logic">
+            <div class="lane-title">业务分发：按 RequestCode 路由到处理器</div>
+            <div class="lane-content logic">
+              <div class="node" data-node="process-dispatch" role="button" tabindex="0" aria-label="processMessageReceived">
+                <div class="title">processMessageReceived</div>
+                统一分发入口
+                <div class="thread-tag">remoting dispatch</div>
+              </div>
+              <div class="node" data-node="processor-table" role="button" tabindex="0" aria-label="processorTable">
+                <div class="title">processorTable</div>
+                RequestCode -> NettyRequestProcessor
+                <div class="thread-tag">remoting dispatch</div>
+              </div>
+              <div class="node" data-node="default-processor" role="button" tabindex="0" aria-label="DefaultRequestProcessor">
+                <div class="title">DefaultRequestProcessor</div>
+                注册/心跳/Topic/KV/配置/权限等处理
+                <div class="thread-tag">defaultExecutor</div>
+              </div>
+              <div class="node" data-node="client-request-processor" role="button" tabindex="0" aria-label="ClientRequestProcessor">
+                <div class="title">ClientRequestProcessor</div>
+                专门处理 GET_ROUTEINFO_BY_TOPIC
+                <div class="thread-tag">clientRequestExecutor</div>
+              </div>
+              <div class="node" data-node="zone-route-hook" role="button" tabindex="0" aria-label="ZoneRouteRPCHook">
+                <div class="title">ZoneRouteRPCHook</div>
+                doAfterResponse 按机房过滤路由
+                <div class="thread-tag">remoting RPC hook</div>
+              </div>
+              <div class="node" data-node="housekeeping" role="button" tabindex="0" aria-label="BrokerHousekeepingService">
+                <div class="title">BrokerHousekeepingService</div>
+                连接关闭与超时清理
+                <div class="thread-tag">channel event + scan task</div>
+              </div>
+              <div class="node" data-node="unregister-service" role="button" tabindex="0" aria-label="BatchUnregistrationService">
+                <div class="title">BatchUnregistrationService</div>
+                出队聚合并批量注销
+                <div class="thread-tag">service thread</div>
+              </div>
+              <div class="node" data-node="client-broker" role="button" tabindex="0" aria-label="Client Broker">
+                <div class="title">Broker / Client</div>
+                请求发起方与响应接收方
+                <div class="thread-tag">remote endpoint</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane-section data">
+            <div class="lane-title">路由元数据：RouteInfoManager 核心结构</div>
+            <div class="lane-content data">
+              <div class="node" data-node="route-info-manager" role="button" tabindex="0" aria-label="RouteInfoManager">
+                <div class="title">RouteInfoManager</div>
+                路由元数据聚合入口
+                <div class="thread-tag">rw lock</div>
+              </div>
+              <div class="node" data-node="cluster-table" role="button" tabindex="0" aria-label="clusterAddrTable">
+                <div class="title">clusterAddrTable</div>
+                集群 -> brokerName 集合
+                <div class="thread-tag">ConcurrentHashMap</div>
+              </div>
+              <div class="node" data-node="broker-addr-table" role="button" tabindex="0" aria-label="brokerAddrTable">
+                <div class="title">brokerAddrTable</div>
+                brokerName -> BrokerData
+                <div class="thread-tag">ConcurrentHashMap</div>
+              </div>
+              <div class="node" data-node="broker-live-table" role="button" tabindex="0" aria-label="brokerLiveTable">
+                <div class="title">brokerLiveTable</div>
+                心跳时间戳/连接信息
+                <div class="thread-tag">ConcurrentHashMap</div>
+              </div>
+              <div class="node" data-node="topic-queue-table" role="button" tabindex="0" aria-label="topicQueueTable">
+                <div class="title">topicQueueTable</div>
+                Topic -> (brokerName -> QueueData)
+                <div class="thread-tag">ConcurrentHashMap</div>
+              </div>
+              <div class="node" data-node="filter-server-table" role="button" tabindex="0" aria-label="filterServerTable">
+                <div class="title">filterServerTable</div>
+                BrokerAddrInfo -> FilterServer 列表
+                <div class="thread-tag">ConcurrentHashMap</div>
+              </div>
+              <div class="node" data-node="topic-mapping-table" role="button" tabindex="0" aria-label="topicQueueMappingInfoTable">
+                <div class="title">topicQueueMappingInfoTable</div>
+                静态 Topic 映射信息
+                <div class="thread-tag">ConcurrentHashMap</div>
+              </div>
+              <div class="node" data-node="kv-config-manager" role="button" tabindex="0" aria-label="KVConfigManager">
+                <div class="title">KVConfigManager</div>
+                命名空间 KV 配置读写
+                <div class="thread-tag">rw lock</div>
+              </div>
+              <div class="node" data-node="configuration" role="button" tabindex="0" aria-label="Configuration">
+                <div class="title">Configuration</div>
+                NameSrv 配置更新与持久化
+                <div class="thread-tag">config store</div>
+              </div>
+              <div class="node" data-node="route-result" role="button" tabindex="0" aria-label="TopicRouteData / RegisterBrokerResult">
+                <div class="title">Route Result</div>
+                TopicRouteData / RegisterBrokerResult / TopicList / Config
+                <div class="thread-tag">response payload</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel right-panel">
+      <h2>步骤说明</h2>
+      <div class="group">
+        <div class="group-title">当前链路标签</div>
+        <div id="activeTag" class="tag inbound">入站阶段</div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">核心调用链</div>
+        <ul id="methodList" class="method-list">
+          <li>等待执行步骤后展示</li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <div class="group-title">源码锚点（RocketMQ）</div>
+        <ul id="sourceAnchorList" class="source-list">
+          <li>等待执行步骤后展示</li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <div class="group-title">高级细节（可展开）</div>
+        <details id="advancedDetails" class="advanced-panel">
+          <summary>查看异常分支、调用语义、开关条件、副作用范围与版本差异</summary>
+          <div id="advancedContent" class="advanced-content">
+            <p class="empty">等待执行步骤后展示</p>
+          </div>
+        </details>
+      </div>
+
+      <div class="group">
+        <div class="group-title">节点职责（点击节点查看）</div>
+        <div id="nodeInspector" class="node-inspector">选择一个节点查看该节点在 NameSrv 线程模型中的职责与作用</div>
+      </div>
+    </section>
+
+    <section class="panel log-panel">
+      <h2>流程步骤与日志</h2>
+      <div id="flowSteps" class="flow-steps"></div>
+      <div id="logList" class="log"></div>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      scenario: "main",
+      running: false,
+      stepIndex: 0,
+      currentIndex: -1,
+      speed: 1,
+      playToken: 0,
+      stepToken: 0,
+      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      selectedNode: "",
+      log: []
+    };
+
+    const els = {
+      statusStep: document.getElementById("status-step"),
+      statusThread: document.getElementById("status-thread"),
+      statusRequest: document.getElementById("status-request"),
+      statusChannel: document.getElementById("status-channel"),
+      scenarioBadge: document.getElementById("scenarioBadge"),
+      runDot: document.getElementById("runDot"),
+      runStateText: document.getElementById("runStateText"),
+      activeTag: document.getElementById("activeTag"),
+      methodList: document.getElementById("methodList"),
+      sourceAnchorList: document.getElementById("sourceAnchorList"),
+      advancedDetails: document.getElementById("advancedDetails"),
+      advancedContent: document.getElementById("advancedContent"),
+      nodeInspector: document.getElementById("nodeInspector"),
+      flowSteps: document.getElementById("flowSteps"),
+      logList: document.getElementById("logList"),
+      stepRange: document.getElementById("stepRange"),
+      stepProgressText: document.getElementById("stepProgressText"),
+      stepProgressPercent: document.getElementById("stepProgressPercent"),
+      scenarioButtons: Array.from(document.querySelectorAll("[data-scenario]")),
+      btnPlay: document.getElementById("btn-play"),
+      btnPause: document.getElementById("btn-pause"),
+      btnReset: document.getElementById("btn-reset"),
+      btnPrev: document.getElementById("btn-prev"),
+      btnNext: document.getElementById("btn-next")
+    };
+
+    const stageCanvas = document.querySelector(".stage-canvas");
+    const flowLines = document.getElementById("flowLines");
+    const svgNS = "http://www.w3.org/2000/svg";
+    const staticGroup = document.createElementNS(svgNS, "g");
+    const dynamicGroup = document.createElementNS(svgNS, "g");
+    flowLines.appendChild(staticGroup);
+    flowLines.appendChild(dynamicGroup);
+
+    const nodeElements = Array.from(document.querySelectorAll(".node"));
+    const nodeById = new Map(nodeElements.map((node) => [node.dataset.node, node]));
+    const speedButtons = Array.from(document.querySelectorAll("[data-speed]"));
+    const scenarioOrder = ["main", "broker", "route", "heartbeat", "offline", "topic-admin", "perm", "config", "cluster"];
+
+    const staticLinks = [
+      ["namesrv-startup", "namesrv-controller"],
+      ["namesrv-controller", "netty-remoting-server"],
+      ["namesrv-controller", "netty-remoting-client"],
+      ["netty-remoting-server", "server-bootstrap"],
+      ["server-bootstrap", "boss-selector"],
+      ["boss-selector", "accept-channel"],
+      ["accept-channel", "decoder"],
+      ["decoder", "netty-handler"],
+      ["netty-handler", "process-dispatch"],
+      ["process-dispatch", "processor-table"],
+      ["processor-table", "default-processor"],
+      ["processor-table", "client-request-processor"],
+      ["default-processor", "route-info-manager"],
+      ["client-request-processor", "route-info-manager"],
+      ["default-processor", "kv-config-manager"],
+      ["default-processor", "configuration"],
+      ["default-processor", "unregister-service"],
+      ["housekeeping", "unregister-service"],
+      ["unregister-service", "route-info-manager"],
+      ["route-info-manager", "cluster-table"],
+      ["route-info-manager", "broker-addr-table"],
+      ["route-info-manager", "broker-live-table"],
+      ["route-info-manager", "topic-queue-table"],
+      ["route-info-manager", "filter-server-table"],
+      ["route-info-manager", "topic-mapping-table"],
+      ["topic-queue-table", "route-result"],
+      ["filter-server-table", "route-result"],
+      ["topic-mapping-table", "route-result"],
+      ["kv-config-manager", "route-result"],
+      ["configuration", "route-result"],
+      ["route-result", "zone-route-hook"],
+      ["zone-route-hook", "response-write"],
+      ["route-result", "response-write"],
+      ["response-write", "client-broker"],
+      ["netty-remoting-client", "client-broker"]
+    ];
+
+    const nodeDescriptions = {
+      "namesrv-startup": "NameSrv 进程入口，负责读取命令行和配置文件，然后创建并启动 NamesrvController",
+      "namesrv-controller": "NameSrv 组件装配中心：初始化 KVConfig、RouteInfo、RemotingServer/Client、定时任务、线程池与 RPC Hook",
+      "netty-remoting-server": "RocketMQ remoting 层 Netty 服务端实现，负责接收 RemotingCommand 并交由处理器执行",
+      "netty-remoting-client": "NameSrv 内部 remoting client，用于向 Broker 发起 one-way 通知（如最小 BrokerId 变更）",
+      "server-bootstrap": "Netty ServerBootstrap 负责端口绑定、pipeline 初始化和 Boss/Worker EventLoop 关联",
+      "boss-selector": "Boss EventLoop 监听 OP_ACCEPT；有新连接到达后创建 child channel",
+      "accept-channel": "每个 Broker/Client TCP 连接对应一个 NioSocketChannel，在 Worker 线程处理 I/O",
+      "decoder": "NettyDecoder 把网络字节流转换为 RemotingCommand（请求码、头部、体），默认由 defaultEventExecutorGroup 处理，关闭 serverNettyWorkerGroupEnable 时回落到 worker eventLoop",
+      "netty-handler": "NettyServerHandler 是 Remoting 入站网关，默认由 defaultEventExecutorGroup 处理，关闭 serverNettyWorkerGroupEnable 时回落到 worker eventLoop",
+      "process-dispatch": "根据请求类型（RequestCommand/ResponseCommand）和请求码执行异步或同步处理",
+      "processor-table": "RequestCode 到 NettyRequestProcessor 的映射表；非 clusterTest 模式下，GET_ROUTEINFO_BY_TOPIC 映射到 ClientRequestProcessor",
+      "default-processor": "NameSrv 默认处理器：注册、心跳、注销、Topic/KV/配置、权限和集群查询等请求",
+      "client-request-processor": "客户端查路由专用处理器，执行服务就绪检查、路由读取、序列化兼容处理",
+      "zone-route-hook": "ZoneRouteRPCHook 在 GET_ROUTEINFO_BY_TOPIC 响应后按 zoneName 过滤路由结果",
+      "housekeeping": "连接关闭/异常时触发路由清理；配合扫描任务剔除长时间不活跃 Broker",
+      "unregister-service": "BatchUnregistrationService 从注销队列取请求并批量 drain，统一调用 RouteInfoManager.unRegisterBroker；入队由 RouteInfoManager.submitUnRegisterBrokerRequest 完成",
+      "client-broker": "链路请求方（Broker/Producer/Consumer），也是响应数据接收方",
+      "route-info-manager": "路由元数据主入口，核心更新/读取路径使用读写锁保护多个 Map 的一致性；部分查询会直接返回并发 Map 的当前视图",
+      "cluster-table": "clusterAddrTable 保存集群与 brokerName 关系，用于按集群维度管理 Broker",
+      "broker-addr-table": "brokerAddrTable 记录 brokerName 到 BrokerData（含 master/slave 地址）的映射",
+      "broker-live-table": "brokerLiveTable 记录心跳时间戳、版本、通道信息，用于存活判定",
+      "topic-queue-table": "topicQueueTable 维护 Topic -> (brokerName -> QueueData) 映射，是客户端查路由的主要来源",
+      "filter-server-table": "filterServerTable 保存 BrokerAddrInfo(clusterName+brokerAddr) 到 FilterServer 列表映射，查路由时按 brokerAddr 组装到响应体",
+      "topic-mapping-table": "topicQueueMappingInfoTable 保存静态 Topic 队列映射信息，随查路由返回",
+      "kv-config-manager": "KVConfigManager 管理 Namesrv 命名空间 KV 数据，支持 put/get/delete/list",
+      "configuration": "Configuration 负责 NameSrv 配置更新、黑名单校验后的持久化与查询",
+      "route-result": "业务处理后的响应体封装区：RegisterBrokerResult / TopicRouteData / TopicList / Config 等",
+      "response-write": "NettyEncoder 编码并写回 RemotingCommand 响应，默认由 defaultEventExecutorGroup 处理，关闭 serverNettyWorkerGroupEnable 时回落到 worker eventLoop"
+    };
+
+    const scenarios = {
+      main: {
+        label: "主流程：NameSrv 启动 -> 接收连接 -> 业务处理",
+        steps: [
+          {
+            id: "main-1",
+            title: "启动入口解析配置",
+            thread: "main",
+            requestCode: "-",
+            channel: "UNBOUND",
+            tone: "inbound",
+            tag: "启动阶段",
+            highlight: ["namesrv-startup", "namesrv-controller"],
+            methods: [
+              "NamesrvStartup.main(args)",
+              "NamesrvStartup.createNamesrvController(...)"
+            ],
+            anchors: [
+              {
+                symbol: "NamesrvStartup#main",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/NamesrvStartup.java",
+                note: "NameSrv 启动入口"
+              }
+            ],
+            anim: [{ from: "namesrv-startup", to: "namesrv-controller", tone: "inbound" }],
+            log: "读取 namesrv 配置并构建 NamesrvController"
+          },
+          {
+            id: "main-2",
+            title: "初始化 Remoting 与业务组件",
+            thread: "main",
+            requestCode: "-",
+            channel: "INIT",
+            tone: "internal",
+            tag: "初始化",
+            highlight: ["namesrv-controller", "netty-remoting-server", "netty-remoting-client", "kv-config-manager", "configuration"],
+            methods: [
+              "NamesrvController.initialize()",
+              "NamesrvController.initiateNetworkComponents()",
+              "NamesrvController.initiateThreadExecutors()",
+              "NamesrvController.registerProcessor()"
+            ],
+            anchors: [
+              {
+                symbol: "NamesrvController#initialize",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/NamesrvController.java",
+                note: "初始化 remoting server/client、线程池、定时任务与 RPC Hook"
+              }
+            ],
+            anim: [
+              { from: "namesrv-controller", to: "netty-remoting-server", tone: "internal" },
+              { from: "namesrv-controller", to: "netty-remoting-client", tone: "internal" },
+              { from: "namesrv-controller", to: "kv-config-manager", tone: "internal" },
+              { from: "namesrv-controller", to: "configuration", tone: "internal" }
+            ],
+            log: "完成 Processor 注册，等待启动网络监听"
+          },
+          {
+            id: "main-3",
+            title: "启动 remoting 组件并监听端口",
+            thread: "main -> boss",
+            requestCode: "-",
+            channel: "LISTEN 9876",
+            tone: "inbound",
+            tag: "网络就绪",
+            highlight: ["namesrv-controller", "netty-remoting-server", "netty-remoting-client", "route-info-manager", "unregister-service", "server-bootstrap", "boss-selector"],
+            methods: [
+              "NamesrvController.start()",
+              "NettyRemotingServer.start()",
+              "NettyRemotingClient.start()",
+              "RouteInfoManager.start()",
+              "ServerBootstrap.bind(listenPort)"
+            ],
+            anchors: [
+              {
+                symbol: "NamesrvController#start",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/NamesrvController.java",
+                note: "启动 remotingServer/remotingClient 并启动 RouteInfoManager 内部服务"
+              }
+            ],
+            anim: [
+              { from: "namesrv-controller", to: "netty-remoting-client", tone: "internal" },
+              { from: "namesrv-controller", to: "route-info-manager", tone: "internal" },
+              { from: "route-info-manager", to: "unregister-service", tone: "internal" },
+              { from: "netty-remoting-server", to: "server-bootstrap", tone: "inbound" },
+              { from: "server-bootstrap", to: "boss-selector", tone: "inbound" }
+            ],
+            log: "NameSrv 启动网络组件并监听端口，进入 OP_ACCEPT 循环"
+          },
+          {
+            id: "main-4",
+            title: "接收到 Broker/Client 新连接",
+            thread: "boss -> worker",
+            requestCode: "-",
+            channel: "ACTIVE",
+            tone: "inbound",
+            tag: "连接建立",
+            highlight: ["boss-selector", "accept-channel", "client-broker"],
+            methods: [
+              "NioEventLoop.processSelectedKey(...)",
+              "ServerSocketChannel.accept()"
+            ],
+            anchors: [
+              {
+                symbol: "NioEventLoop#processSelectedKey",
+                location: "io.netty.channel.nio.NioEventLoop (netty transport)",
+                note: "accept 后 child channel 注册到 worker"
+              }
+            ],
+            anim: [
+              { from: "client-broker", to: "boss-selector", tone: "inbound" },
+              { from: "boss-selector", to: "accept-channel", tone: "inbound" }
+            ],
+            log: "远端连接建立，child channel 交由 Worker 线程处理"
+          },
+          {
+            id: "main-5",
+            title: "请求解码并进入 NettyServerHandler",
+            thread: "defaultEventExecutorGroup（默认）",
+            requestCode: "动态",
+            channel: "ACTIVE",
+            tone: "inbound",
+            tag: "入站解码",
+            highlight: ["accept-channel", "decoder", "netty-handler"],
+            methods: [
+              "NettyDecoder.decode(...)",
+              "NettyServerHandler.channelRead0(...)"
+            ],
+            anchors: [
+              {
+                symbol: "NettyServerHandler#channelRead0",
+                location: "remoting/src/main/java/org/apache/rocketmq/remoting/netty/NettyRemotingServer.java",
+                note: "Remoting 请求入口"
+              }
+            ],
+            anim: [
+              { from: "accept-channel", to: "decoder", tone: "inbound" },
+              { from: "decoder", to: "netty-handler", tone: "inbound" }
+            ],
+            log: "ByteBuf 反序列化为 RemotingCommand"
+          },
+          {
+            id: "main-6",
+            title: "统一分发到请求处理器",
+            thread: "remoting -> client/defaultExecutor",
+            requestCode: "按请求码匹配",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "请求分发",
+            highlight: ["netty-handler", "process-dispatch", "processor-table", "default-processor", "client-request-processor"],
+            methods: [
+              "NettyRemotingAbstract.processMessageReceived(...)",
+              "processorTable.get(requestCode) -> ClientRequestProcessor / DefaultRequestProcessor"
+            ],
+            anchors: [
+              {
+                symbol: "NettyRemotingAbstract#processMessageReceived",
+                location: "remoting/src/main/java/org/apache/rocketmq/remoting/netty/NettyRemotingAbstract.java",
+                note: "请求码分发逻辑"
+              },
+              {
+                symbol: "NamesrvController#registerProcessor",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/NamesrvController.java",
+                note: "GET_ROUTEINFO_BY_TOPIC 独立注册到 ClientRequestProcessor"
+              }
+            ],
+            anim: [
+              { from: "netty-handler", to: "process-dispatch", tone: "internal" },
+              { from: "process-dispatch", to: "processor-table", tone: "internal" },
+              { from: "processor-table", to: "client-request-processor", tone: "internal" },
+              { from: "processor-table", to: "default-processor", tone: "internal" }
+            ],
+            log: "按 RequestCode 找到对应处理器：查路由走 ClientRequestProcessor，其余多数走 DefaultRequestProcessor"
+          },
+          {
+            id: "main-7",
+            title: "执行业务逻辑并读写路由元数据",
+            thread: "client/defaultExecutor",
+            requestCode: "多请求码（注册/查路由/心跳/配置等）",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "业务处理",
+            highlight: [
+              "default-processor",
+              "client-request-processor",
+              "route-info-manager",
+              "cluster-table",
+              "broker-live-table",
+              "topic-queue-table",
+              "filter-server-table",
+              "topic-mapping-table",
+              "kv-config-manager",
+              "configuration",
+              "route-result"
+            ],
+            methods: [
+              "DefaultRequestProcessor.processRequest(...) / ClientRequestProcessor.getRouteInfoByTopic(...)",
+              "RouteInfoManager.registerBroker(...) / pickupTopicRouteData(...) / unRegisterBroker(...)"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#processRequest",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "NameSrv 核心业务入口"
+              },
+              {
+                symbol: "ClientRequestProcessor#getRouteInfoByTopic",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/ClientRequestProcessor.java",
+                note: "查路由专用处理器"
+              },
+              {
+                symbol: "RouteInfoManager",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "路由元数据更新/读取"
+              }
+            ],
+            anim: [
+              { from: "default-processor", to: "route-info-manager", tone: "internal" },
+              { from: "client-request-processor", to: "route-info-manager", tone: "internal" },
+              { from: "route-info-manager", to: "cluster-table", tone: "internal" },
+              { from: "route-info-manager", to: "broker-live-table", tone: "internal" },
+              { from: "route-info-manager", to: "topic-queue-table", tone: "internal" },
+              { from: "route-info-manager", to: "filter-server-table", tone: "internal" },
+              { from: "route-info-manager", to: "topic-mapping-table", tone: "internal" },
+              { from: "kv-config-manager", to: "route-result", tone: "internal" },
+              { from: "topic-queue-table", to: "route-result", tone: "internal" }
+            ],
+            log: "业务处理完成，组装响应体（路由信息或注册结果）"
+          },
+          {
+            id: "main-8",
+            title: "编码响应并回写连接",
+            thread: "defaultEventExecutorGroup（默认）",
+            requestCode: "RESPONSE_COMMAND",
+            channel: "ACTIVE",
+            tone: "outbound",
+            tag: "响应返回",
+            highlight: ["route-result", "response-write", "client-broker"],
+            methods: [
+              "NettyEncoder.encode(...)",
+              "Channel.writeAndFlush(response)"
+            ],
+            anchors: [
+              {
+                symbol: "NettyEncoder / writeAndFlush",
+                location: "remoting/src/main/java/org/apache/rocketmq/remoting/netty/NettyEncoder.java",
+                note: "响应出站"
+              }
+            ],
+            anim: [
+              { from: "route-result", to: "response-write", tone: "outbound" },
+              { from: "response-write", to: "client-broker", tone: "outbound" }
+            ],
+            log: "响应已返回给请求方，主流程闭环"
+          }
+        ]
+      },
+      broker: {
+        label: "子流程：Broker 注册链路",
+        steps: [
+          {
+            id: "broker-1",
+            title: "Broker 发起 REGISTER_BROKER 请求",
+            thread: "remote broker -> defaultEventExecutorGroup（默认）",
+            requestCode: "REGISTER_BROKER",
+            channel: "ACTIVE",
+            tone: "inbound",
+            tag: "入站注册",
+            highlight: ["client-broker", "accept-channel", "decoder", "netty-handler"],
+            methods: [
+              "BrokerOuterAPI.registerBrokerAll(...)",
+              "NettyServerHandler.channelRead0(...)"
+            ],
+            anchors: [
+              {
+                symbol: "REGISTER_BROKER 请求入口",
+                location: "broker/src/main/java/org/apache/rocketmq/broker/out/BrokerOuterAPI.java",
+                note: "Broker 周期注册"
+              }
+            ],
+            anim: [
+              { from: "client-broker", to: "accept-channel", tone: "inbound" },
+              { from: "accept-channel", to: "decoder", tone: "inbound" },
+              { from: "decoder", to: "netty-handler", tone: "inbound" }
+            ],
+            log: "Broker 注册请求到达 NameSrv"
+          },
+          {
+            id: "broker-2",
+            title: "分发到 DefaultRequestProcessor",
+            thread: "defaultExecutor",
+            requestCode: "REGISTER_BROKER",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "请求分发",
+            highlight: ["process-dispatch", "processor-table", "default-processor"],
+            methods: [
+              "NettyRemotingAbstract.processRequestCommand(...)",
+              "DefaultRequestProcessor.registerBroker(...)"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#registerBroker",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "注册处理主入口"
+              }
+            ],
+            anim: [
+              { from: "netty-handler", to: "process-dispatch", tone: "internal" },
+              { from: "process-dispatch", to: "processor-table", tone: "internal" },
+              { from: "processor-table", to: "default-processor", tone: "internal" }
+            ],
+            log: "请求码命中 REGISTER_BROKER 处理逻辑"
+          },
+          {
+            id: "broker-3",
+            title: "CRC 校验并进入 RouteInfoManager.registerBroker",
+            thread: "defaultExecutor",
+            requestCode: "REGISTER_BROKER",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "元数据写入",
+            highlight: ["default-processor", "route-info-manager"],
+            methods: [
+              "checksum(ctx, request, requestHeader)",
+              "RouteInfoManager.registerBroker(...)",
+              "lock.writeLock().lockInterruptibly()"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#checksum",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "crc32 校验失败直接返回 SYSTEM_ERROR"
+              },
+              {
+                symbol: "RouteInfoManager#registerBroker",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "注册逻辑 + 写锁"
+              }
+            ],
+            anim: [{ from: "default-processor", to: "route-info-manager", tone: "internal" }],
+            log: "通过校验后进入写锁流程，准备更新多张路由表"
+          },
+          {
+            id: "broker-4",
+            title: "更新集群和 Broker 地址映射",
+            thread: "defaultExecutor",
+            requestCode: "REGISTER_BROKER",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "路由更新",
+            highlight: ["route-info-manager", "cluster-table", "broker-addr-table"],
+            methods: [
+              "clusterAddrTable.computeIfAbsent(...)",
+              "brokerAddrTable.put(...)"
+            ],
+            anchors: [
+              {
+                symbol: "clusterAddrTable / brokerAddrTable 更新",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "保存集群与地址映射"
+              }
+            ],
+            anim: [
+              { from: "route-info-manager", to: "cluster-table", tone: "internal" },
+              { from: "route-info-manager", to: "broker-addr-table", tone: "internal" }
+            ],
+            log: "集群关系与 broker 地址映射更新完成"
+          },
+          {
+            id: "broker-5",
+            title: "更新存活表与 Topic 队列数据",
+            thread: "defaultExecutor",
+            requestCode: "REGISTER_BROKER",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "路由更新",
+            highlight: ["route-info-manager", "broker-live-table", "topic-queue-table", "filter-server-table", "topic-mapping-table"],
+            methods: [
+              "brokerLiveTable.put(...)",
+              "createAndUpdateQueueData(...)",
+              "filterServerTable.put/remove(...)",
+              "topicQueueMappingInfoTable.put(...)"
+            ],
+            anchors: [
+              {
+                symbol: "brokerLiveTable/topicQueueTable/filterServerTable 更新",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "刷新心跳与 Topic 路由"
+              }
+            ],
+            anim: [
+              { from: "route-info-manager", to: "broker-live-table", tone: "internal" },
+              { from: "route-info-manager", to: "topic-queue-table", tone: "internal" },
+              { from: "route-info-manager", to: "filter-server-table", tone: "internal" },
+              { from: "route-info-manager", to: "topic-mapping-table", tone: "internal" }
+            ],
+            log: "Broker 心跳信息与 Topic 队列映射写入"
+          },
+          {
+            id: "broker-6",
+            title: "构建 RegisterBrokerResult",
+            thread: "defaultExecutor",
+            requestCode: "REGISTER_BROKER",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "结果组装",
+            highlight: ["default-processor", "kv-config-manager", "route-result"],
+            methods: [
+              "new RegisterBrokerResult()",
+              "setHaServerAddr / setMasterAddr",
+              "getKVListByNamespace(NAMESPACE_ORDER_TOPIC_CONFIG)"
+            ],
+            anchors: [
+              {
+                symbol: "RegisterBrokerResult",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "返回主从相关地址"
+              }
+            ],
+            anim: [{ from: "default-processor", to: "route-result", tone: "internal" }],
+            log: "封装注册响应，包含主从与 HA 地址信息"
+          },
+          {
+            id: "broker-7",
+            title: "回写注册响应",
+            thread: "defaultEventExecutorGroup（默认）",
+            requestCode: "RESPONSE_COMMAND",
+            channel: "ACTIVE",
+            tone: "outbound",
+            tag: "响应返回",
+            highlight: ["route-result", "response-write", "client-broker"],
+            methods: [
+              "ctx.writeAndFlush(response)",
+              "NettyEncoder.encode(...)"
+            ],
+            anchors: [
+              {
+                symbol: "响应出站",
+                location: "remoting/src/main/java/org/apache/rocketmq/remoting/netty/NettyEncoder.java",
+                note: "Broker 收到注册结果"
+              }
+            ],
+            anim: [
+              { from: "route-result", to: "response-write", tone: "outbound" },
+              { from: "response-write", to: "client-broker", tone: "outbound" }
+            ],
+            log: "注册响应发送完成，Broker 注册链路闭环"
+          },
+          {
+            id: "broker-8",
+            title: "保活扫描与失效剔除",
+            thread: "scheduled service",
+            requestCode: "-",
+            channel: "MAYBE_INACTIVE",
+            tone: "internal",
+            tag: "后台维护",
+            highlight: ["housekeeping", "route-info-manager", "unregister-service", "broker-live-table"],
+            methods: [
+              "scanNotActiveBroker()",
+              "BrokerHousekeepingService.onChannelClose/onChannelException/onChannelIdle(...)",
+              "submitUnRegisterBrokerRequest(...)"
+            ],
+            anchors: [
+              {
+                symbol: "NamesrvController#startScheduleService",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/NamesrvController.java",
+                note: "周期清理不活跃 Broker"
+              }
+            ],
+            anim: [
+              { from: "housekeeping", to: "route-info-manager", tone: "internal" },
+              { from: "route-info-manager", to: "unregister-service", tone: "internal" },
+              { from: "route-info-manager", to: "broker-live-table", tone: "internal" }
+            ],
+            log: "后台持续清理离线 Broker，保障路由结果新鲜度"
+          }
+        ]
+      },
+      route: {
+        label: "子流程：客户端查路由链路",
+        steps: [
+          {
+            id: "route-1",
+            title: "客户端发起 GET_ROUTEINFO_BY_TOPIC",
+            thread: "remote client -> defaultEventExecutorGroup（默认）",
+            requestCode: "GET_ROUTEINFO_BY_TOPIC",
+            channel: "ACTIVE",
+            tone: "inbound",
+            tag: "入站查询",
+            highlight: ["client-broker", "accept-channel", "decoder", "netty-handler"],
+            methods: [
+              "MQClientAPIImpl.getTopicRouteInfoFromNameServer(...)",
+              "NettyServerHandler.channelRead0(...)"
+            ],
+            anchors: [
+              {
+                symbol: "GET_ROUTEINFO_BY_TOPIC 请求",
+                location: "client/src/main/java/org/apache/rocketmq/client/impl/MQClientAPIImpl.java",
+                note: "生产者/消费者拉取 Topic 路由"
+              }
+            ],
+            anim: [
+              { from: "client-broker", to: "accept-channel", tone: "inbound" },
+              { from: "accept-channel", to: "decoder", tone: "inbound" },
+              { from: "decoder", to: "netty-handler", tone: "inbound" }
+            ],
+            log: "客户端查路由请求进入 NameSrv"
+          },
+          {
+            id: "route-2",
+            title: "请求码分发到 ClientRequestProcessor",
+            thread: "clientRequestExecutor",
+            requestCode: "GET_ROUTEINFO_BY_TOPIC",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "专用处理器",
+            highlight: ["process-dispatch", "processor-table", "client-request-processor"],
+            methods: [
+              "NettyRemotingAbstract.processRequestCommand(...)",
+              "ClientRequestProcessor.getRouteInfoByTopic(...)"
+            ],
+            anchors: [
+              {
+                symbol: "NamesrvController#registerProcessor",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/NamesrvController.java",
+                note: "GET_ROUTEINFO_BY_TOPIC 注册到 ClientRequestProcessor"
+              },
+              {
+                symbol: "ClientRequestProcessor#getRouteInfoByTopic",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/ClientRequestProcessor.java",
+                note: "默认模式下查路由入口（clusterTest 模式除外）"
+              }
+            ],
+            anim: [
+              { from: "netty-handler", to: "process-dispatch", tone: "internal" },
+              { from: "process-dispatch", to: "processor-table", tone: "internal" },
+              { from: "processor-table", to: "client-request-processor", tone: "internal" }
+            ],
+            log: "请求码命中 GET_ROUTEINFO_BY_TOPIC，进入 ClientRequestProcessor 专用线程池"
+          },
+          {
+            id: "route-3",
+            title: "服务就绪检查 + 读取 RouteInfoManager（读锁）",
+            thread: "clientRequestExecutor",
+            requestCode: "GET_ROUTEINFO_BY_TOPIC",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "读取元数据",
+            highlight: ["client-request-processor", "route-info-manager", "topic-queue-table", "broker-addr-table", "filter-server-table", "topic-mapping-table"],
+            methods: [
+              "needWaitForService/waitSecondsForService 检查",
+              "RouteInfoManager.pickupTopicRouteData(topic)",
+              "lock.readLock().lockInterruptibly()"
+            ],
+            anchors: [
+              {
+                symbol: "RouteInfoManager#pickupTopicRouteData",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "按 topic 汇总 QueueData/BrokerData/filterServer/topicQueueMapping"
+              },
+              {
+                symbol: "ClientRequestProcessor#getRouteInfoByTopic",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/ClientRequestProcessor.java",
+                note: "未就绪时返回 SYSTEM_ERROR(name server not ready)"
+              }
+            ],
+            anim: [
+              { from: "client-request-processor", to: "route-info-manager", tone: "internal" },
+              { from: "route-info-manager", to: "topic-queue-table", tone: "internal" },
+              { from: "route-info-manager", to: "broker-addr-table", tone: "internal" },
+              { from: "route-info-manager", to: "filter-server-table", tone: "internal" },
+              { from: "route-info-manager", to: "topic-mapping-table", tone: "internal" }
+            ],
+            log: "在读锁下拼装 TopicRouteData 所需元数据"
+          },
+          {
+            id: "route-4",
+            title: "过滤并组装 TopicRouteData",
+            thread: "clientRequestExecutor -> rpc hook",
+            requestCode: "GET_ROUTEINFO_BY_TOPIC",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "结果组装",
+            highlight: ["client-request-processor", "kv-config-manager", "zone-route-hook", "route-result"],
+            methods: [
+              "TopicRouteData topicRouteData = routeInfoManager.pickupTopicRouteData(topic)",
+              "orderTopicConf 组装 + topicRouteData.encode(...)",
+              "ZoneRouteRPCHook.doAfterResponse(...)（可选）"
+            ],
+            anchors: [
+              {
+                symbol: "TopicRouteData encode",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/ClientRequestProcessor.java",
+                note: "按版本或标准 JSON 参数选择编码策略"
+              },
+              {
+                symbol: "ZoneRouteRPCHook#doAfterResponse",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/route/ZoneRouteRPCHook.java",
+                note: "zoneMode=true 且 zoneName 非空时按机房过滤"
+              }
+            ],
+            anim: [
+              { from: "topic-queue-table", to: "route-result", tone: "internal" },
+              { from: "kv-config-manager", to: "route-result", tone: "internal" },
+              { from: "route-result", to: "zone-route-hook", tone: "internal" }
+            ],
+            log: "生成 TopicRouteData，必要时附加 orderTopicConf 并执行机房过滤"
+          },
+          {
+            id: "route-5",
+            title: "响应回写客户端并更新本地缓存",
+            thread: "defaultEventExecutorGroup（默认） + client",
+            requestCode: "RESPONSE_COMMAND",
+            channel: "ACTIVE",
+            tone: "outbound",
+            tag: "响应返回",
+            highlight: ["route-result", "response-write", "client-broker"],
+            methods: [
+              "ctx.writeAndFlush(response)",
+              "MQClientInstance.updateTopicRouteInfoFromNameServer(...)"
+            ],
+            anchors: [
+              {
+                symbol: "客户端路由缓存更新",
+                location: "client/src/main/java/org/apache/rocketmq/client/impl/factory/MQClientInstance.java",
+                note: "刷新本地 Topic 路由缓存"
+              }
+            ],
+            anim: [
+              { from: "route-result", to: "response-write", tone: "outbound" },
+              { from: "response-write", to: "client-broker", tone: "outbound" }
+            ],
+            log: "客户端收到路由信息，后续消息发送按新路由执行"
+          },
+          {
+            id: "route-6",
+            title: "缓存过期后触发下一轮拉取",
+            thread: "client scheduled task",
+            requestCode: "GET_ROUTEINFO_BY_TOPIC",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "周期刷新",
+            highlight: ["client-broker"],
+            methods: [
+              "MQClientInstance#updateTopicRouteInfoFromNameServer 周期任务",
+              "按超时/变化触发下一次请求"
+            ],
+            anchors: [
+              {
+                symbol: "客户端定时刷新机制",
+                location: "client/src/main/java/org/apache/rocketmq/client/impl/factory/MQClientInstance.java",
+                note: "保障路由数据持续有效"
+              }
+            ],
+            anim: [],
+            log: "客户端按周期或异常信号重新拉取路由"
+          }
+        ]
+      },
+      heartbeat: {
+        label: "子流程：心跳与版本比对链路",
+        steps: [
+          {
+            id: "heartbeat-1",
+            title: "Broker 发起 BROKER_HEARTBEAT / QUERY_DATA_VERSION",
+            thread: "remote broker -> defaultEventExecutorGroup（默认）",
+            requestCode: "BROKER_HEARTBEAT / QUERY_DATA_VERSION",
+            channel: "ACTIVE",
+            tone: "inbound",
+            tag: "入站轻量请求",
+            highlight: ["client-broker", "accept-channel", "decoder", "netty-handler"],
+            methods: [
+              "NettyServerHandler.channelRead0(...)",
+              "RequestCode.BROKER_HEARTBEAT / QUERY_DATA_VERSION"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#processRequest",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "两类请求均走 DefaultRequestProcessor"
+              }
+            ],
+            anim: [
+              { from: "client-broker", to: "accept-channel", tone: "inbound" },
+              { from: "accept-channel", to: "decoder", tone: "inbound" },
+              { from: "decoder", to: "netty-handler", tone: "inbound" }
+            ],
+            log: "Broker 通过心跳/版本比对维持与 NameSrv 的状态同步"
+          },
+          {
+            id: "heartbeat-2",
+            title: "分发到 DefaultRequestProcessor",
+            thread: "defaultExecutor",
+            requestCode: "BROKER_HEARTBEAT / QUERY_DATA_VERSION",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "请求分发",
+            highlight: ["process-dispatch", "processor-table", "default-processor"],
+            methods: [
+              "NettyRemotingAbstract.processRequestCommand(...)",
+              "DefaultRequestProcessor.brokerHeartbeat()/queryBrokerTopicConfig(...)"
+            ],
+            anchors: [
+              {
+                symbol: "NettyRemotingAbstract#processRequestCommand",
+                location: "remoting/src/main/java/org/apache/rocketmq/remoting/netty/NettyRemotingAbstract.java",
+                note: "按请求码进入对应处理分支"
+              }
+            ],
+            anim: [
+              { from: "netty-handler", to: "process-dispatch", tone: "internal" },
+              { from: "process-dispatch", to: "processor-table", tone: "internal" },
+              { from: "processor-table", to: "default-processor", tone: "internal" }
+            ],
+            log: "请求进入默认处理器的心跳/版本查询分支"
+          },
+          {
+            id: "heartbeat-3",
+            title: "更新 brokerLiveTable 时间戳",
+            thread: "defaultExecutor",
+            requestCode: "BROKER_HEARTBEAT",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "心跳刷新",
+            highlight: ["default-processor", "route-info-manager", "broker-live-table"],
+            methods: [
+              "RouteInfoManager.updateBrokerInfoUpdateTimestamp(clusterName, brokerAddr)",
+              "response.setCode(ResponseCode.SUCCESS)"
+            ],
+            anchors: [
+              {
+                symbol: "RouteInfoManager#updateBrokerInfoUpdateTimestamp",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "仅刷新 lastUpdateTimestamp，不变更路由结构"
+              }
+            ],
+            anim: [
+              { from: "default-processor", to: "route-info-manager", tone: "internal" },
+              { from: "route-info-manager", to: "broker-live-table", tone: "internal" }
+            ],
+            log: "心跳路径完成，Broker 存活时间被刷新"
+          },
+          {
+            id: "heartbeat-4",
+            title: "版本比对并返回 changed 标记",
+            thread: "defaultExecutor",
+            requestCode: "QUERY_DATA_VERSION",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "版本比对",
+            highlight: ["default-processor", "route-info-manager", "broker-live-table", "route-result"],
+            methods: [
+              "isBrokerTopicConfigChanged(clusterName, brokerAddr, dataVersion)",
+              "updateBrokerInfoUpdateTimestamp(clusterName, brokerAddr)",
+              "queryBrokerTopicConfig(clusterName, brokerAddr)",
+              "responseHeader.setChanged(changed)"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#queryBrokerTopicConfig",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "changed=true 表示 Broker 需要同步 TopicConfig"
+              }
+            ],
+            anim: [
+              { from: "default-processor", to: "route-info-manager", tone: "internal" },
+              { from: "route-info-manager", to: "route-result", tone: "internal" }
+            ],
+            log: "返回比对结果 changed 及 NameSrv 侧 DataVersion（如存在）"
+          },
+          {
+            id: "heartbeat-5",
+            title: "按调用方式处理响应（心跳多为单向，版本比对可同步或单向）",
+            thread: "defaultEventExecutorGroup（默认，仅同步请求回包）",
+            requestCode: "RESPONSE_COMMAND（仅同步调用场景可见）",
+            channel: "ACTIVE",
+            tone: "outbound",
+            tag: "响应处理",
+            highlight: ["route-result", "response-write", "client-broker"],
+            methods: [
+              "BROKER_HEARTBEAT: BrokerOuterAPI.sendHeartbeat -> invokeOneway，不实际回写响应",
+              "QUERY_DATA_VERSION: needRegister 场景 invokeSync 会回包；sendHeartbeatViaDataVersion 场景 invokeOneway 不回包"
+            ],
+            anchors: [
+              {
+                symbol: "NettyRemotingAbstract#writeResponse",
+                location: "remoting/src/main/java/org/apache/rocketmq/remoting/netty/NettyRemotingAbstract.java",
+                note: "oneway 请求直接返回，不进行 writeAndFlush"
+              },
+              {
+                symbol: "响应出站",
+                location: "remoting/src/main/java/org/apache/rocketmq/remoting/netty/NettyEncoder.java",
+                note: "仅同步调用（如 needRegister）会回包"
+              }
+            ],
+            anim: [
+              { from: "route-result", to: "response-write", tone: "outbound" },
+              { from: "response-write", to: "client-broker", tone: "outbound" }
+            ],
+            log: "BROKER_HEARTBEAT 通常单向不回包；QUERY_DATA_VERSION 在同步调用时返回 changed，单向调用时不回包"
+          }
+        ]
+      },
+      offline: {
+        label: "子流程：Broker 下线与清理链路",
+        steps: [
+          {
+            id: "offline-1",
+            title: "触发下线（主动注销或被动断链）",
+            thread: "broker / housekeeping / scan",
+            requestCode: "UNREGISTER_BROKER / 无请求码（通道事件/超时扫描）",
+            channel: "ACTIVE -> INACTIVE",
+            tone: "inbound",
+            tag: "下线触发",
+            highlight: ["client-broker", "housekeeping", "route-info-manager", "unregister-service"],
+            methods: [
+              "DefaultRequestProcessor.unregisterBroker(...)",
+              "BrokerHousekeepingService.onChannelClose/onChannelException/onChannelIdle(...)",
+              "RouteInfoManager.scanNotActiveBroker()"
+            ],
+            anchors: [
+              {
+                symbol: "BrokerHousekeepingService",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/BrokerHousekeepingService.java",
+                note: "连接事件统一转发至 RouteInfoManager.onChannelDestroy"
+              }
+            ],
+            anim: [
+              { from: "housekeeping", to: "route-info-manager", tone: "inbound" },
+              { from: "route-info-manager", to: "unregister-service", tone: "inbound" }
+            ],
+            log: "主动/被动下线路径最终都会进入注销队列"
+          },
+          {
+            id: "offline-2",
+            title: "BatchUnregistrationService 批量出队",
+            thread: "BatchUnregistrationService",
+            requestCode: "内部批处理（非 Remoting 请求码）",
+            channel: "INACTIVE",
+            tone: "internal",
+            tag: "批量注销",
+            highlight: ["unregister-service", "route-info-manager"],
+            methods: [
+              "unregistrationQueue.take()/drainTo(...)",
+              "RouteInfoManager.unRegisterBroker(Set<UnRegisterBrokerRequestHeader>)"
+            ],
+            anchors: [
+              {
+                symbol: "BatchUnregistrationService#run",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/BatchUnregistrationService.java",
+                note: "批量注销提高 Broker 下线处理效率"
+              }
+            ],
+            anim: [{ from: "unregister-service", to: "route-info-manager", tone: "internal" }],
+            log: "服务线程从队列取请求并批量执行 unRegisterBroker"
+          },
+          {
+            id: "offline-3",
+            title: "写锁清理 brokerLive/filter/broker/cluster",
+            thread: "BatchUnregistrationService",
+            requestCode: "内部注销执行（非 Remoting 请求码）",
+            channel: "INACTIVE",
+            tone: "internal",
+            tag: "路由清理",
+            highlight: ["route-info-manager", "broker-live-table", "filter-server-table", "broker-addr-table", "cluster-table"],
+            methods: [
+              "brokerLiveTable.remove(...) / filterServerTable.remove(...)",
+              "brokerAddrTable/clusterAddrTable 清理",
+              "cleanTopicByUnRegisterRequests(...)"
+            ],
+            anchors: [
+              {
+                symbol: "RouteInfoManager#unRegisterBroker",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "写锁下清理多张表并处理 acting master 权限"
+              }
+            ],
+            anim: [
+              { from: "route-info-manager", to: "broker-live-table", tone: "internal" },
+              { from: "route-info-manager", to: "filter-server-table", tone: "internal" },
+              { from: "route-info-manager", to: "broker-addr-table", tone: "internal" },
+              { from: "route-info-manager", to: "cluster-table", tone: "internal" },
+              { from: "route-info-manager", to: "topic-queue-table", tone: "internal" }
+            ],
+            log: "下线 Broker 的路由会按粒度清理（移除地址、必要时移除 brokerName/cluster，并联动清理 topic 关联）"
+          },
+          {
+            id: "offline-4",
+            title: "可选通知最小 BrokerId 变化",
+            thread: "BatchUnregistrationService -> remoting client",
+            requestCode: "NOTIFY_MIN_BROKER_ID_CHANGE",
+            channel: "INACTIVE",
+            tone: "internal",
+            tag: "可选通知",
+            highlight: ["route-info-manager", "netty-remoting-client", "client-broker"],
+            methods: [
+              "notifyMinBrokerIdChanged(...)",
+              "remotingClient.invokeOneway(...)"
+            ],
+            anchors: [
+              {
+                symbol: "RouteInfoManager#notifyMinBrokerIdChanged",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "需 notifyMinBrokerIdChanged=true 才执行"
+              }
+            ],
+            anim: [
+              { from: "route-info-manager", to: "netty-remoting-client", tone: "internal" },
+              { from: "netty-remoting-client", to: "client-broker", tone: "internal" }
+            ],
+            log: "开启通知配置时，NameSrv 向相关 Broker 单向下发状态变化"
+          },
+          {
+            id: "offline-5",
+            title: "主动注销请求返回（入队成功/失败）",
+            thread: "defaultEventExecutorGroup（默认）",
+            requestCode: "RESPONSE_COMMAND",
+            channel: "ACTIVE/INACTIVE",
+            tone: "outbound",
+            tag: "响应返回",
+            highlight: ["route-result", "response-write", "client-broker"],
+            methods: [
+              "DefaultRequestProcessor.unregisterBroker(...)",
+              "response.setCode(SUCCESS / SYSTEM_ERROR)",
+              "ctx.writeAndFlush(response)"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#unregisterBroker",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "响应结果表示是否成功提交到注销队列，实际删表异步完成"
+              }
+            ],
+            anim: [
+              { from: "route-result", to: "response-write", tone: "outbound" },
+              { from: "response-write", to: "client-broker", tone: "outbound" }
+            ],
+            log: "主动下线请求会收到同步响应；路由清理由批量服务异步执行"
+          }
+        ]
+      },
+      "topic-admin": {
+        label: "子流程：Topic 管理与列表查询链路",
+        steps: [
+          {
+            id: "topic-admin-1",
+            title: "Topic 管理请求入站",
+            thread: "broker/client -> defaultEventExecutorGroup（默认）",
+            requestCode: "REGISTER_TOPIC_IN_NAMESRV / DELETE_TOPIC_IN_NAMESRV / TopicList 查询",
+            channel: "ACTIVE",
+            tone: "inbound",
+            tag: "入站请求",
+            highlight: ["client-broker", "accept-channel", "decoder", "netty-handler"],
+            methods: [
+              "REGISTER_TOPIC_IN_NAMESRV / DELETE_TOPIC_IN_NAMESRV",
+              "GET_ALL_TOPIC_LIST_FROM_NAMESERVER / GET_TOPICS_BY_CLUSTER / GET_SYSTEM_TOPIC_LIST_FROM_NS / GET_UNIT_*"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#processRequest",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "Topic 管理与 Topic 列表查询都在该入口分发"
+              }
+            ],
+            anim: [
+              { from: "client-broker", to: "accept-channel", tone: "inbound" },
+              { from: "accept-channel", to: "decoder", tone: "inbound" },
+              { from: "decoder", to: "netty-handler", tone: "inbound" }
+            ],
+            log: "Topic 注册/删除/列表请求进入 NameSrv"
+          },
+          {
+            id: "topic-admin-2",
+            title: "写锁注册/删除 Topic 路由",
+            thread: "defaultExecutor",
+            requestCode: "REGISTER_TOPIC_IN_NAMESRV / DELETE_TOPIC_IN_NAMESRV",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "Topic 变更",
+            highlight: ["default-processor", "route-info-manager", "topic-queue-table", "cluster-table", "broker-addr-table"],
+            methods: [
+              "RouteInfoManager.registerTopic(topic, queueDatas)",
+              "RouteInfoManager.deleteTopic(topic) / deleteTopic(topic, clusterName)"
+            ],
+            anchors: [
+              {
+                symbol: "RouteInfoManager#registerTopic",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "注册时会校验 broker 合法性"
+              }
+            ],
+            anim: [
+              { from: "default-processor", to: "route-info-manager", tone: "internal" },
+              { from: "route-info-manager", to: "topic-queue-table", tone: "internal" },
+              { from: "route-info-manager", to: "cluster-table", tone: "internal" }
+            ],
+            log: "Topic 路由按请求进行增删"
+          },
+          {
+            id: "topic-admin-3",
+            title: "列表查询（部分受开关控制）",
+            thread: "defaultExecutor",
+            requestCode: "GET_ALL_TOPIC_LIST / GET_TOPICS_BY_CLUSTER / GET_SYSTEM_TOPIC_LIST / GET_UNIT_*",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "列表查询",
+            highlight: ["default-processor", "route-info-manager", "topic-queue-table", "cluster-table", "route-result"],
+            methods: [
+              "GET_ALL_TOPIC_LIST_FROM_NAMESERVER -> enableAllTopicList；GET_TOPICS_BY_CLUSTER/GET_UNIT_* -> enableTopicList",
+              "GET_SYSTEM_TOPIC_LIST_FROM_NS 直接读取 RouteInfoManager.getSystemTopicList()（不受上述开关限制）"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#getAllTopicListFromNameserver",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "对应开关关闭时返回 SYSTEM_ERROR: disable"
+              },
+              {
+                symbol: "DefaultRequestProcessor#getSystemTopicListFromNs",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "系统 Topic 列表接口不做 enableAllTopicList/enableTopicList 判断"
+              }
+            ],
+            anim: [
+              { from: "default-processor", to: "route-info-manager", tone: "internal" },
+              { from: "route-info-manager", to: "route-result", tone: "internal" }
+            ],
+            log: "列表查询中仅部分接口受 enableAllTopicList/enableTopicList 控制，系统 Topic 列表接口不受影响"
+          },
+          {
+            id: "topic-admin-4",
+            title: "编码并回写 Topic 管理响应",
+            thread: "defaultEventExecutorGroup（默认）",
+            requestCode: "RESPONSE_COMMAND",
+            channel: "ACTIVE",
+            tone: "outbound",
+            tag: "响应返回",
+            highlight: ["route-result", "response-write", "client-broker"],
+            methods: [
+              "TopicList.encode()/response.setCode(...)",
+              "ctx.writeAndFlush(response)"
+            ],
+            anchors: [
+              {
+                symbol: "TopicList",
+                location: "remoting/src/main/java/org/apache/rocketmq/remoting/protocol/body/TopicList.java",
+                note: "列表查询成功时返回 TopicList"
+              }
+            ],
+            anim: [
+              { from: "route-result", to: "response-write", tone: "outbound" },
+              { from: "response-write", to: "client-broker", tone: "outbound" }
+            ],
+            log: "Topic 管理链路响应返回完成"
+          }
+        ]
+      },
+      perm: {
+        label: "子流程：写权限控制链路",
+        steps: [
+          {
+            id: "perm-1",
+            title: "运维发起写权限控制请求",
+            thread: "admin client -> defaultEventExecutorGroup（默认）",
+            requestCode: "WIPE_WRITE_PERM_OF_BROKER / ADD_WRITE_PERM_OF_BROKER",
+            channel: "ACTIVE",
+            tone: "inbound",
+            tag: "入站控制",
+            highlight: ["client-broker", "accept-channel", "decoder", "netty-handler"],
+            methods: [
+              "WIPE_WRITE_PERM_OF_BROKER / ADD_WRITE_PERM_OF_BROKER"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#processRequest",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "权限控制请求均由默认处理器分发"
+              }
+            ],
+            anim: [
+              { from: "client-broker", to: "accept-channel", tone: "inbound" },
+              { from: "accept-channel", to: "decoder", tone: "inbound" },
+              { from: "decoder", to: "netty-handler", tone: "inbound" }
+            ],
+            log: "写权限调整请求进入 NameSrv"
+          },
+          {
+            id: "perm-2",
+            title: "写锁批量修改 QueueData 权限",
+            thread: "defaultExecutor",
+            requestCode: "WIPE_WRITE_PERM_OF_BROKER / ADD_WRITE_PERM_OF_BROKER",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "权限更新",
+            highlight: ["default-processor", "route-info-manager", "topic-queue-table", "route-result"],
+            methods: [
+              "RouteInfoManager.wipeWritePermOfBrokerByLock(...)",
+              "RouteInfoManager.addWritePermOfBrokerByLock(...)",
+              "operateWritePermOfBroker(...)"
+            ],
+            anchors: [
+              {
+                symbol: "RouteInfoManager#operateWritePermOfBroker",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "遍历 topicQueueTable 设置 PERM_READ/PERM_WRITE"
+              }
+            ],
+            anim: [
+              { from: "default-processor", to: "route-info-manager", tone: "internal" },
+              { from: "route-info-manager", to: "topic-queue-table", tone: "internal" },
+              { from: "route-info-manager", to: "route-result", tone: "internal" }
+            ],
+            log: "受影响 Topic 数量被写入响应头返回"
+          },
+          {
+            id: "perm-3",
+            title: "编码并回写权限控制响应",
+            thread: "defaultEventExecutorGroup（默认）",
+            requestCode: "RESPONSE_COMMAND",
+            channel: "ACTIVE",
+            tone: "outbound",
+            tag: "响应返回",
+            highlight: ["route-result", "response-write", "client-broker"],
+            methods: [
+              "responseHeader.setWipeTopicCount/setAddTopicCount",
+              "ctx.writeAndFlush(response)"
+            ],
+            anchors: [
+              {
+                symbol: "WipeWritePermOfBrokerResponseHeader / AddWritePermOfBrokerResponseHeader",
+                location: "remoting/src/main/java/org/apache/rocketmq/remoting/protocol/header/namesrv/WipeWritePermOfBrokerResponseHeader.java",
+                note: "返回本次变更影响的 Topic 数量"
+              }
+            ],
+            anim: [
+              { from: "route-result", to: "response-write", tone: "outbound" },
+              { from: "response-write", to: "client-broker", tone: "outbound" }
+            ],
+            log: "写权限控制链路闭环"
+          }
+        ]
+      },
+      config: {
+        label: "子流程：KV 与 NameSrv 配置链路",
+        steps: [
+          {
+            id: "config-1",
+            title: "KV/配置请求入站并分发",
+            thread: "client -> defaultExecutor",
+            requestCode: "PUT/GET/DELETE_KV_CONFIG / GET_KVLIST_BY_NAMESPACE / UPDATE/GET_NAMESRV_CONFIG",
+            channel: "ACTIVE",
+            tone: "inbound",
+            tag: "配置请求",
+            highlight: ["client-broker", "netty-handler", "process-dispatch", "processor-table", "default-processor"],
+            methods: [
+              "PUT_KV_CONFIG / GET_KV_CONFIG / DELETE_KV_CONFIG / GET_KVLIST_BY_NAMESPACE",
+              "UPDATE_NAMESRV_CONFIG / GET_NAMESRV_CONFIG"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#processRequest",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "KV 与配置请求共用默认处理器"
+              }
+            ],
+            anim: [
+              { from: "client-broker", to: "netty-handler", tone: "inbound" },
+              { from: "netty-handler", to: "process-dispatch", tone: "internal" },
+              { from: "process-dispatch", to: "default-processor", tone: "internal" }
+            ],
+            log: "配置相关请求进入默认处理器"
+          },
+          {
+            id: "config-2",
+            title: "KVConfigManager 处理 KV 读写",
+            thread: "defaultExecutor",
+            requestCode: "PUT/GET/DELETE_KV_CONFIG / GET_KVLIST_BY_NAMESPACE",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "KV 管理",
+            highlight: ["default-processor", "kv-config-manager", "route-result"],
+            methods: [
+              "kvConfigManager.putKVConfig/getKVConfig/deleteKVConfig/getKVListByNamespace",
+              "SUCCESS / QUERY_NOT_FOUND"
+            ],
+            anchors: [
+              {
+                symbol: "KVConfigManager",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/kvconfig/KVConfigManager.java",
+                note: "命名空间 KV 管理与持久化"
+              }
+            ],
+            anim: [
+              { from: "default-processor", to: "kv-config-manager", tone: "internal" },
+              { from: "kv-config-manager", to: "route-result", tone: "internal" }
+            ],
+            log: "KV 请求完成并生成对应响应码"
+          },
+          {
+            id: "config-3",
+            title: "Configuration 更新与黑名单校验",
+            thread: "defaultExecutor",
+            requestCode: "UPDATE_NAMESRV_CONFIG / GET_NAMESRV_CONFIG",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "配置更新",
+            highlight: ["default-processor", "configuration", "route-result"],
+            methods: [
+              "MixAll.string2Properties(bodyStr)",
+              "validateBlackListConfigExist(properties)",
+              "configuration.update(properties) / getAllConfigsFormatString()"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#updateConfig",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "命中黑名单返回 NO_PERMISSION"
+              }
+            ],
+            anim: [
+              { from: "default-processor", to: "configuration", tone: "internal" },
+              { from: "configuration", to: "route-result", tone: "internal" }
+            ],
+            log: "配置更新前执行黑名单校验，通过后持久化配置"
+          },
+          {
+            id: "config-4",
+            title: "编码并回写配置响应",
+            thread: "defaultEventExecutorGroup（默认）",
+            requestCode: "RESPONSE_COMMAND",
+            channel: "ACTIVE",
+            tone: "outbound",
+            tag: "响应返回",
+            highlight: ["route-result", "response-write", "client-broker"],
+            methods: [
+              "response.setCode(...)/response.setBody(...)",
+              "ctx.writeAndFlush(response)"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#getConfig",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "GET_NAMESRV_CONFIG 返回格式化配置文本"
+              }
+            ],
+            anim: [
+              { from: "route-result", to: "response-write", tone: "outbound" },
+              { from: "response-write", to: "client-broker", tone: "outbound" }
+            ],
+            log: "KV 与配置管理链路响应结束"
+          }
+        ]
+      },
+      cluster: {
+        label: "子流程：集群信息查询链路",
+        steps: [
+          {
+            id: "cluster-1",
+            title: "运维查询集群信息请求入站",
+            thread: "admin client -> defaultEventExecutorGroup（默认）",
+            requestCode: "GET_BROKER_CLUSTER_INFO / GET_BROKER_MEMBER_GROUP",
+            channel: "ACTIVE",
+            tone: "inbound",
+            tag: "入站查询",
+            highlight: ["client-broker", "accept-channel", "decoder", "netty-handler"],
+            methods: [
+              "GET_BROKER_CLUSTER_INFO",
+              "GET_BROKER_MEMBER_GROUP"
+            ],
+            anchors: [
+              {
+                symbol: "DefaultRequestProcessor#processRequest",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/processor/DefaultRequestProcessor.java",
+                note: "集群查询请求由默认处理器处理"
+              }
+            ],
+            anim: [
+              { from: "client-broker", to: "accept-channel", tone: "inbound" },
+              { from: "accept-channel", to: "decoder", tone: "inbound" },
+              { from: "decoder", to: "netty-handler", tone: "inbound" }
+            ],
+            log: "集群拓扑查询请求进入 NameSrv"
+          },
+          {
+            id: "cluster-2",
+            title: "读取 RouteInfoManager 组装查询结果",
+            thread: "defaultExecutor",
+            requestCode: "GET_BROKER_CLUSTER_INFO / GET_BROKER_MEMBER_GROUP",
+            channel: "ACTIVE",
+            tone: "internal",
+            tag: "拓扑读取",
+            highlight: ["default-processor", "route-info-manager", "cluster-table", "broker-addr-table", "route-result"],
+            methods: [
+              "RouteInfoManager.getAllClusterInfo()",
+              "RouteInfoManager.getBrokerMemberGroup(clusterName, brokerName)"
+            ],
+            anchors: [
+              {
+                symbol: "RouteInfoManager#getAllClusterInfo",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "返回 clusterAddrTable + brokerAddrTable 当前视图（并发 Map 引用，不是深拷贝快照）"
+              },
+              {
+                symbol: "RouteInfoManager#getBrokerMemberGroup",
+                location: "namesrv/src/main/java/org/apache/rocketmq/namesrv/routeinfo/RouteInfoManager.java",
+                note: "读锁下拷贝 brokerAddrs"
+              }
+            ],
+            anim: [
+              { from: "default-processor", to: "route-info-manager", tone: "internal" },
+              { from: "route-info-manager", to: "cluster-table", tone: "internal" },
+              { from: "route-info-manager", to: "broker-addr-table", tone: "internal" },
+              { from: "route-info-manager", to: "route-result", tone: "internal" }
+            ],
+            log: "完成 ClusterInfo 或 BrokerMemberGroup 数据装配"
+          },
+          {
+            id: "cluster-3",
+            title: "编码并回写集群查询响应",
+            thread: "defaultEventExecutorGroup（默认）",
+            requestCode: "RESPONSE_COMMAND",
+            channel: "ACTIVE",
+            tone: "outbound",
+            tag: "响应返回",
+            highlight: ["route-result", "response-write", "client-broker"],
+            methods: [
+              "ClusterInfo.encode()/GetBrokerMemberGroupResponseBody.encode()",
+              "ctx.writeAndFlush(response)"
+            ],
+            anchors: [
+              {
+                symbol: "GetBrokerMemberGroupResponseBody",
+                location: "remoting/src/main/java/org/apache/rocketmq/remoting/protocol/body/GetBrokerMemberGroupResponseBody.java",
+                note: "成员组查询返回体"
+              }
+            ],
+            anim: [
+              { from: "route-result", to: "response-write", tone: "outbound" },
+              { from: "response-write", to: "client-broker", tone: "outbound" }
+            ],
+            log: "集群信息查询链路闭环"
+          }
+        ]
+      }
+    };
+
+    const advancedCategoryLabels = {
+      exceptions: "异常分支",
+      semantics: "调用语义",
+      conditions: "触发条件/开关",
+      effects: "副作用范围",
+      versions: "版本差异"
+    };
+
+    const scenarioAdvanced = {
+      main: {
+        exceptions: [
+          "处理器未注册请求码时返回 REQUEST_CODE_NOT_SUPPORTED，线程池过载时返回 SYSTEM_BUSY"
+        ],
+        semantics: [
+          "入口先区分 REQUEST_COMMAND/RESPONSE_COMMAND，再按 requestCode 映射处理器",
+          "oneway 请求不会进入真实回包写出流程"
+        ],
+        conditions: [
+          "clusterTest=true 时默认处理器切换为 ClusterTestRequestProcessor",
+          "serverNettyWorkerGroupEnable 控制编解码与 handler 是否挂载 defaultEventExecutorGroup"
+        ],
+        effects: [
+          "完成 Processor 注册、RemotingServer/Client 启动、定时扫描与路由管理服务启动"
+        ],
+        versions: [
+          "关闭流程中，高版本客户端请求可能收到 GO_AWAY 响应以触发迁移"
+        ]
+      },
+      broker: {
+        exceptions: [
+          "CRC32 校验失败会直接返回 SYSTEM_ERROR",
+          "注册冲突时若旧 stateVersion 更大，新的注册会被忽略"
+        ],
+        semantics: [
+          "REGISTER_BROKER 默认同步调用并返回 RegisterBrokerResult，配置 oneway 时不等待响应"
+        ],
+        conditions: [
+          "deleteTopicWithBrokerRegistration=true 时会按注册载荷裁剪旧 Topic",
+          "notifyMinBrokerIdChanged=true 且最小 brokerId 变化时触发 one-way 通知"
+        ],
+        effects: [
+          "写锁下更新 clusterAddrTable、brokerAddrTable、brokerLiveTable、topicQueueTable、filterServerTable"
+        ],
+        versions: [
+          "Broker 版本 >= 3.0.11 解码 RegisterBrokerBody；旧版本走 TopicConfigSerializeWrapper 兼容路径"
+        ]
+      },
+      route: {
+        exceptions: [
+          "NameSrv 未就绪时返回 SYSTEM_ERROR(name server not ready)",
+          "Topic 无路由时返回 TOPIC_NOT_EXIST"
+        ],
+        semantics: [
+          "GET_ROUTEINFO_BY_TOPIC 走 ClientRequestProcessor 专用线程池，通常为同步请求并返回 TopicRouteData"
+        ],
+        conditions: [
+          "needWaitForService/waitSecondsForService 控制启动期是否拒绝查路由",
+          "orderMessageEnable 控制是否附加 orderTopicConf",
+          "zoneMode=true 且 zoneName 非空时触发 ZoneRouteRPCHook 裁剪"
+        ],
+        effects: [
+          "读锁下聚合 topicQueueTable、brokerAddrTable、filterServerTable 与 topicQueueMappingInfoTable"
+        ],
+        versions: [
+          "请求版本 >= 4.9.4 或 acceptStandardJsonOnly=true 时使用标准 JSON 编码"
+        ]
+      },
+      heartbeat: {
+        exceptions: [
+          "NameSrv 侧仅刷新存在的 BrokerLiveInfo；不存在的 brokerAddr 会被静默忽略更新时间"
+        ],
+        semantics: [
+          "BROKER_HEARTBEAT 常见为 invokeOneway，不要求回包",
+          "QUERY_DATA_VERSION 可能是同步调用（needRegister）也可能是单向调用（sendHeartbeatViaDataVersion）"
+        ],
+        conditions: [
+          "enableSlaveActingMaster + compatibleWithOldNameSrv 决定使用 QUERY_DATA_VERSION 兼容心跳路径还是 BROKER_HEARTBEAT"
+        ],
+        effects: [
+          "刷新 brokerLiveTable 的 lastUpdateTimestamp；版本比对路径可返回 changed 与 NameSrv DataVersion"
+        ],
+        versions: [
+          "旧 NameSrv 兼容模式下，Broker 借助 QUERY_DATA_VERSION 维持心跳语义"
+        ]
+      },
+      offline: {
+        exceptions: [
+          "主动注销时，提交到 BatchUnregistrationService 队列失败会返回 SYSTEM_ERROR"
+        ],
+        semantics: [
+          "UNREGISTER_BROKER 的同步响应仅表示入队结果，真正删表在批处理线程异步执行"
+        ],
+        conditions: [
+          "notifyMinBrokerIdChanged=true 时，最小 brokerId 变化触发 NOTIFY_MIN_BROKER_ID_CHANGE",
+          "acting master 模式下，无主后会联动清除相关 QueueData 写权限"
+        ],
+        effects: [
+          "清理 brokerLiveTable/filterServerTable/brokerAddrTable/clusterAddrTable，并按 broker 粒度清理 topicQueueTable"
+        ],
+        versions: []
+      },
+      "topic-admin": {
+        exceptions: [
+          "registerTopic 若携带非法 brokerName 会拒绝写入并记录 warn",
+          "列表开关关闭时返回 SYSTEM_ERROR: disable"
+        ],
+        semantics: [
+          "REGISTER_TOPIC_IN_NAMESRV/DELETE_TOPIC_IN_NAMESRV 为默认处理器同步请求"
+        ],
+        conditions: [
+          "GET_ALL_TOPIC_LIST_FROM_NAMESERVER 受 enableAllTopicList 控制",
+          "GET_TOPICS_BY_CLUSTER/GET_UNIT_* 受 enableTopicList 控制",
+          "GET_SYSTEM_TOPIC_LIST_FROM_NS 不受上述开关限制"
+        ],
+        effects: [
+          "写锁下更新 topicQueueTable；按 clusterName 维度执行局部删 Topic"
+        ],
+        versions: []
+      },
+      perm: {
+        exceptions: [
+          "未命中 brokerName 时影响 topic 数可能为 0，仍返回 SUCCESS"
+        ],
+        semantics: [
+          "WIPE/ADD_WRITE_PERM_OF_BROKER 均由 DefaultRequestProcessor 同步返回影响计数"
+        ],
+        conditions: [
+          "requestCode 决定执行清写权限或恢复读写权限逻辑"
+        ],
+        effects: [
+          "遍历 topicQueueTable 修改对应 QueueData.perm，不直接变更 brokerAddrTable"
+        ],
+        versions: []
+      },
+      config: {
+        exceptions: [
+          "UPDATE_NAMESRV_CONFIG 命中黑名单返回 NO_PERMISSION",
+          "KV/配置解析失败返回 SYSTEM_ERROR，命名空间未命中返回 QUERY_NOT_FOUND"
+        ],
+        semantics: [
+          "KV 与配置请求均走 DefaultRequestProcessor，同步返回处理结果"
+        ],
+        conditions: [
+          "configBlackList、configStorePath、kvConfigPath 等关键键禁止远程动态修改"
+        ],
+        effects: [
+          "KV 写请求由 KVConfigManager 持久化；Configuration.update 成功后会持久化"
+        ],
+        versions: []
+      },
+      cluster: {
+        exceptions: [
+          "GET_BROKER_MEMBER_GROUP 未命中时返回空成员组但 response code 仍为 SUCCESS"
+        ],
+        semantics: [
+          "GET_BROKER_CLUSTER_INFO/GET_BROKER_MEMBER_GROUP 为默认处理器同步查询请求"
+        ],
+        conditions: [],
+        effects: [
+          "ClusterInfo 返回当前并发 Map 视图；BrokerMemberGroup 返回读锁下复制的 brokerAddrs"
+        ],
+        versions: []
+      }
+    };
+
+    const stepAdvanced = {
+      "main-6": {
+        effects: [
+          "请求封装为 RequestTask 提交到对应执行器，提交失败时按过载路径回包"
+        ]
+      },
+      "broker-3": {
+        conditions: [
+          "单 Topic 注册场景要求 brokerId 已存在于 brokerAddrTable，否则 registerBroker 返回 null"
+        ]
+      },
+      "broker-8": {
+        effects: [
+          "scanNotActiveBroker 先 closeChannel，再触发 onChannelDestroy 走异步注销链路"
+        ]
+      },
+      "route-4": {
+        versions: [
+          "低版本客户端默认使用历史编码；新版本或显式标记使用标准 JSON 字段排序编码"
+        ]
+      },
+      "heartbeat-5": {
+        semantics: [
+          "needRegister 通过 invokeSync 读取 changed；sendHeartbeatViaDataVersion 通过 invokeOneway 仅保活"
+        ]
+      },
+      "offline-2": {
+        semantics: [
+          "BatchUnregistrationService 先 take 一个请求，再 drainTo 合并同批请求处理"
+        ]
+      },
+      "offline-3": {
+        effects: [
+          "cleanTopicByUnRegisterRequests 会区分 removedBroker 与 reducedBroker，避免过度删路由"
+        ]
+      },
+      "topic-admin-3": {
+        conditions: [
+          "系统 Topic 列表接口通常用于治理场景，建议结合鉴权与网络隔离控制访问面"
+        ]
+      },
+      "perm-2": {
+        effects: [
+          "ADD_WRITE_PERM_OF_BROKER 直接设为 PERM_READ|PERM_WRITE，不保留历史自定义位"
+        ]
+      },
+      "config-3": {
+        effects: [
+          "Configuration.update 成功后会推进 DataVersion，便于外部感知配置变更"
+        ]
+      },
+      "cluster-2": {
+        semantics: [
+          "getAllClusterInfo 为视图返回，调用方应视为瞬时观测结果，不应假设强一致"
+        ]
+      }
+    };
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function getNodeCenter(nodeId) {
+      const node = nodeById.get(nodeId);
+      if (!node || !stageCanvas) return null;
+      const stageRect = stageCanvas.getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
+      return {
+        x: rect.left - stageRect.left + rect.width / 2,
+        y: rect.top - stageRect.top + rect.height / 2
+      };
+    }
+
+    function drawStaticLinks() {
+      if (!flowLines || !stageCanvas) return;
+      const rect = stageCanvas.getBoundingClientRect();
+      flowLines.setAttribute("width", String(rect.width));
+      flowLines.setAttribute("height", String(rect.height));
+      flowLines.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+
+      while (staticGroup.firstChild) {
+        staticGroup.removeChild(staticGroup.firstChild);
+      }
+
+      staticLinks.forEach(([fromId, toId]) => {
+        const from = getNodeCenter(fromId);
+        const to = getNodeCenter(toId);
+        if (!from || !to) return;
+        const line = document.createElementNS(svgNS, "line");
+        line.setAttribute("x1", String(from.x));
+        line.setAttribute("y1", String(from.y));
+        line.setAttribute("x2", String(to.x));
+        line.setAttribute("y2", String(to.y));
+        line.classList.add("flow-line", "static");
+        staticGroup.appendChild(line);
+      });
+    }
+
+    function clearDynamicLayer() {
+      while (dynamicGroup.firstChild) {
+        dynamicGroup.removeChild(dynamicGroup.firstChild);
+      }
+    }
+
+    function clearNodeActiveStates() {
+      nodeElements.forEach((node) => {
+        node.classList.remove("active", "inbound", "outbound", "internal");
+      });
+      if (state.selectedNode && nodeById.has(state.selectedNode)) {
+        nodeById.get(state.selectedNode).classList.add("selected");
+      }
+    }
+
+    function highlightStep(step) {
+      if (!step || !Array.isArray(step.highlight)) return;
+      step.highlight.forEach((id) => {
+        const node = nodeById.get(id);
+        if (!node) return;
+        node.classList.add("active");
+        if (step.tone) {
+          node.classList.add(step.tone);
+        }
+      });
+    }
+
+    function updateStatus(step) {
+      const total = getActiveSteps().length;
+      if (!step) {
+        els.statusStep.textContent = `当前步骤: - / ${total}`;
+        els.statusThread.textContent = "线程: -";
+        els.statusRequest.textContent = "请求码: -";
+        els.statusChannel.textContent = "连接状态: -";
+        return;
+      }
+
+      const indexText = `${state.currentIndex + 1}/${total}`;
+      els.statusStep.textContent = `当前步骤: ${indexText} ${step.title}`;
+      els.statusThread.textContent = `线程: ${step.thread || "-"}`;
+      els.statusRequest.textContent = `请求码: ${step.requestCode || "-"}`;
+      els.statusChannel.textContent = `连接状态: ${step.channel || "-"}`;
+    }
+
+    function toneLabel(tone) {
+      if (tone === "outbound") return "出站阶段";
+      if (tone === "internal") return "内部处理阶段";
+      return "入站阶段";
+    }
+
+    function renderTag(step) {
+      const tone = step?.tone || "inbound";
+      const label = step?.tag || toneLabel(tone);
+      els.activeTag.className = `tag ${tone}`;
+      els.activeTag.textContent = label;
+    }
+
+    function renderMethods(step) {
+      if (!step || !Array.isArray(step.methods) || step.methods.length === 0) {
+        els.methodList.innerHTML = "<li>当前步骤没有额外调用链说明</li>";
+        return;
+      }
+      const html = step.methods
+        .map((item) => `<li>${escapeHtml(item)}</li>`)
+        .join("");
+      els.methodList.innerHTML = html;
+    }
+
+    function renderAnchors(step) {
+      if (!step || !Array.isArray(step.anchors) || step.anchors.length === 0) {
+        els.sourceAnchorList.innerHTML = "<li>当前步骤没有额外源码锚点</li>";
+        return;
+      }
+      const html = step.anchors
+        .map((item) => {
+          const symbol = escapeHtml(item.symbol || "-");
+          const location = escapeHtml(item.location || "-");
+          const note = escapeHtml(item.note || "");
+          return `<li><span class="symbol">${symbol}</span><span class="location">${location}</span>${note}</li>`;
+        })
+        .join("");
+      els.sourceAnchorList.innerHTML = html;
+    }
+
+    function uniqueItems(items) {
+      const seen = new Set();
+      const result = [];
+      (items || []).forEach((item) => {
+        const key = String(item || "").trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        result.push(key);
+      });
+      return result;
+    }
+
+    function buildAdvancedDetails(step) {
+      const scenarioDetail = scenarioAdvanced[state.scenario] || {};
+      const stepDetail = stepAdvanced[step?.id] || {};
+      const details = {};
+
+      Object.keys(advancedCategoryLabels).forEach((key) => {
+        const merged = [
+          ...(scenarioDetail[key] || []),
+          ...(stepDetail[key] || [])
+        ];
+        details[key] = uniqueItems(merged);
+      });
+
+      return details;
+    }
+
+    function renderAdvanced(step) {
+      if (!step) {
+        els.advancedContent.innerHTML = '<p class="empty">等待执行步骤后展示</p>';
+        return;
+      }
+
+      const details = buildAdvancedDetails(step);
+      const blocks = Object.entries(advancedCategoryLabels)
+        .map(([key, label]) => {
+          const items = details[key] || [];
+          if (!items.length) return "";
+          const list = items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+          return `
+            <div class="advanced-block">
+              <div class="advanced-key">${escapeHtml(label)}</div>
+              <ul class="advanced-list">${list}</ul>
+            </div>
+          `;
+        })
+        .join("");
+
+      els.advancedContent.innerHTML = blocks || '<p class="empty">当前步骤暂无可补充的高级细节</p>';
+    }
+
+    function formatLogLine(step, idx) {
+      const tone = step.tone || "inbound";
+      return `[${String(idx + 1).padStart(2, "0")}] [${tone.toUpperCase()}] ${step.title} · ${step.log || ""}`;
+    }
+
+    function renderLog() {
+      if (!state.log.length) {
+        els.logList.innerHTML = '<div class="line">等待开始播放流程...</div>';
+        return;
+      }
+      els.logList.innerHTML = state.log
+        .map((line) => `<div class="line">${escapeHtml(line)}</div>`)
+        .join("");
+      els.logList.scrollTop = els.logList.scrollHeight;
+    }
+
+    function getActiveSteps() {
+      return scenarios[state.scenario].steps;
+    }
+
+    function renderScenarioButtons() {
+      els.scenarioButtons.forEach((button) => {
+        const key = button.dataset.scenario;
+        const active = key === state.scenario;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+      els.scenarioBadge.textContent = `场景：${scenarios[state.scenario].label}`;
+    }
+
+    function renderProgress() {
+      const total = getActiveSteps().length;
+      const executed = state.stepIndex;
+      const percent = total ? Math.round((executed / total) * 100) : 0;
+      els.stepRange.max = String(total);
+      els.stepRange.value = String(executed);
+      els.stepProgressText.textContent = `进度 ${executed} / ${total}`;
+      els.stepProgressPercent.textContent = `${percent}%`;
+    }
+
+    function renderStepCards() {
+      const steps = getActiveSteps();
+      if (!steps.length) {
+        els.flowSteps.innerHTML = '<p class="empty">当前场景没有步骤</p>';
+        return;
+      }
+
+      const cards = steps
+        .map((step, index) => {
+          const active = index === state.currentIndex ? "active" : "";
+          const tone = step.tone || "inbound";
+          return `
+            <div class="flow-step ${active}" data-step-index="${index}" role="button" tabindex="0" aria-label="跳转到步骤 ${index + 1}">
+              <div class="step-title"><span>${index + 1}.</span><span>${escapeHtml(step.title)}</span></div>
+              <div class="step-meta"><span>${escapeHtml(step.thread || "-")}</span><span>${escapeHtml(step.requestCode || "-")}</span></div>
+              <span class="tag ${tone}">${escapeHtml(step.tag || toneLabel(tone))}</span>
+            </div>
+          `;
+        })
+        .join("");
+
+      els.flowSteps.innerHTML = cards;
+      Array.from(els.flowSteps.querySelectorAll(".flow-step")).forEach((card) => {
+        card.addEventListener("click", () => {
+          pausePlayback();
+          const idx = Number(card.dataset.stepIndex);
+          restoreProgress(idx + 1);
+        });
+        card.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            card.click();
+          }
+        });
+      });
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function setRunState(running) {
+      els.runDot.classList.toggle("running", running);
+      els.runStateText.textContent = running ? "状态：播放中" : "状态：已暂停";
+    }
+
+    function animateLink(fromId, toId, tone = "inbound", linger = 320, token) {
+      if (state.reducedMotion) return Promise.resolve();
+      const from = getNodeCenter(fromId);
+      const to = getNodeCenter(toId);
+      if (!from || !to || token !== undefined && token !== state.stepToken) {
+        return Promise.resolve();
+      }
+
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", String(from.x));
+      line.setAttribute("y1", String(from.y));
+      line.setAttribute("x2", String(to.x));
+      line.setAttribute("y2", String(to.y));
+      line.classList.add("flow-line", tone);
+
+      const dot = document.createElementNS(svgNS, "circle");
+      dot.setAttribute("r", "4");
+      dot.classList.add("flow-dot", tone);
+
+      dynamicGroup.appendChild(line);
+      dynamicGroup.appendChild(dot);
+
+      const duration = Math.max(280, 640 / state.speed);
+
+      return new Promise((resolve) => {
+        const startedAt = performance.now();
+
+        function tick(now) {
+          if (token !== undefined && token !== state.stepToken) {
+            line.remove();
+            dot.remove();
+            resolve();
+            return;
+          }
+
+          const progress = Math.min(1, (now - startedAt) / duration);
+          const x = from.x + (to.x - from.x) * progress;
+          const y = from.y + (to.y - from.y) * progress;
+          dot.setAttribute("cx", String(x));
+          dot.setAttribute("cy", String(y));
+
+          if (progress < 1) {
+            requestAnimationFrame(tick);
+            return;
+          }
+
+          setTimeout(() => {
+            line.remove();
+            dot.remove();
+            resolve();
+          }, linger);
+        }
+
+        requestAnimationFrame(tick);
+      });
+    }
+
+    async function startStepAnimation(step) {
+      if (!step || !Array.isArray(step.anim) || step.anim.length === 0 || state.reducedMotion) return;
+      const token = state.stepToken;
+      while (token === state.stepToken) {
+        for (const item of step.anim) {
+          if (token !== state.stepToken) return;
+          await animateLink(item.from, item.to, item.tone || step.tone || "inbound", 260, token);
+        }
+        if (token !== state.stepToken) return;
+        await sleep(Math.max(80, 180 / state.speed));
+      }
+    }
+
+    function applyCurrentStep(step, index, options = {}) {
+      clearDynamicLayer();
+      clearNodeActiveStates();
+      highlightStep(step);
+      state.currentIndex = index;
+      state.stepIndex = index + 1;
+      updateStatus(step);
+      renderTag(step);
+      renderMethods(step);
+      renderAnchors(step);
+      renderAdvanced(step);
+      if (!options.silentLog) {
+        state.log.push(formatLogLine(step, index));
+      }
+      renderLog();
+      renderStepCards();
+      renderProgress();
+      if (!options.noAnimation) {
+        state.stepToken += 1;
+        void startStepAnimation(step);
+      }
+    }
+
+    function restoreProgress(executedCount) {
+      const steps = getActiveSteps();
+      const safeCount = Math.max(0, Math.min(executedCount, steps.length));
+
+      clearDynamicLayer();
+      clearNodeActiveStates();
+      state.log = [];
+      state.currentIndex = -1;
+      state.stepIndex = 0;
+      state.stepToken += 1;
+
+      if (safeCount === 0) {
+        updateStatus(null);
+        renderTag(null);
+        renderMethods(null);
+        renderAnchors(null);
+        renderAdvanced(null);
+        renderLog();
+        renderStepCards();
+        renderProgress();
+        return;
+      }
+
+      for (let i = 0; i < safeCount; i += 1) {
+        state.log.push(formatLogLine(steps[i], i));
+      }
+
+      const lastIndex = safeCount - 1;
+      const step = steps[lastIndex];
+      state.currentIndex = lastIndex;
+      state.stepIndex = safeCount;
+      highlightStep(step);
+      updateStatus(step);
+      renderTag(step);
+      renderMethods(step);
+      renderAnchors(step);
+      renderAdvanced(step);
+      renderLog();
+      renderStepCards();
+      renderProgress();
+      void startStepAnimation(step);
+    }
+
+    function nextStep() {
+      const steps = getActiveSteps();
+      if (state.stepIndex >= steps.length) {
+        pausePlayback();
+        return;
+      }
+      const idx = state.stepIndex;
+      applyCurrentStep(steps[idx], idx);
+    }
+
+    function prevStep() {
+      pausePlayback();
+      restoreProgress(state.stepIndex - 1);
+    }
+
+    function resetCurrentScenario() {
+      pausePlayback();
+      restoreProgress(0);
+    }
+
+    async function play() {
+      const steps = getActiveSteps();
+      if (!steps.length) return;
+      if (state.stepIndex >= steps.length) {
+        restoreProgress(0);
+      }
+
+      state.running = true;
+      const token = ++state.playToken;
+      setRunState(true);
+
+      while (state.running && token === state.playToken) {
+        if (state.stepIndex >= steps.length) {
+          break;
+        }
+        nextStep();
+        const lastStepIndex = state.stepIndex - 1;
+        const currentStep = steps[Math.max(0, lastStepIndex)];
+        const base = Number(currentStep?.duration || 1300);
+        await sleep(base / state.speed);
+      }
+
+      state.running = false;
+      setRunState(false);
+    }
+
+    function pausePlayback() {
+      state.running = false;
+      state.playToken += 1;
+      state.stepToken += 1;
+      clearDynamicLayer();
+      setRunState(false);
+    }
+
+    function setScenario(key) {
+      if (!scenarios[key] || key === state.scenario) return;
+      pausePlayback();
+      state.scenario = key;
+      renderScenarioButtons();
+      restoreProgress(0);
+    }
+
+    function bindEvents() {
+      els.scenarioButtons.forEach((button) => {
+        const key = button.dataset.scenario;
+        button.addEventListener("click", () => setScenario(key));
+      });
+
+      els.btnPlay.addEventListener("click", () => {
+        if (state.running) return;
+        void play();
+      });
+      els.btnPause.addEventListener("click", () => pausePlayback());
+      els.btnReset.addEventListener("click", () => resetCurrentScenario());
+      els.btnPrev.addEventListener("click", () => prevStep());
+      els.btnNext.addEventListener("click", () => {
+        pausePlayback();
+        nextStep();
+      });
+
+      els.stepRange.addEventListener("input", (event) => {
+        pausePlayback();
+        const val = Number(event.target.value || 0);
+        restoreProgress(val);
+      });
+
+      speedButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const speed = Number(button.dataset.speed || 1);
+          state.speed = speed;
+          speedButtons.forEach((b) => b.classList.remove("active"));
+          button.classList.add("active");
+        });
+      });
+
+      nodeElements.forEach((node) => {
+        node.addEventListener("click", () => selectNode(node.dataset.node));
+        node.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectNode(node.dataset.node);
+          }
+        });
+      });
+
+      window.addEventListener("resize", () => {
+        drawStaticLinks();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.target && ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) {
+          return;
+        }
+
+        if (event.code === "Space") {
+          event.preventDefault();
+          if (state.running) {
+            pausePlayback();
+          } else {
+            void play();
+          }
+          return;
+        }
+
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          pausePlayback();
+          nextStep();
+          return;
+        }
+
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          prevStep();
+          return;
+        }
+
+        if (event.key.toLowerCase() === "r") {
+          event.preventDefault();
+          resetCurrentScenario();
+          return;
+        }
+
+        if (/^[1-9]$/.test(event.key)) {
+          const idx = Number(event.key) - 1;
+          const scenarioKey = scenarioOrder[idx];
+          if (!scenarioKey || !scenarios[scenarioKey]) return;
+          event.preventDefault();
+          setScenario(scenarioKey);
+        }
+      });
+
+      if (window.ResizeObserver) {
+        const resizeObserver = new ResizeObserver(() => {
+          drawStaticLinks();
+        });
+        resizeObserver.observe(stageCanvas);
+      }
+    }
+
+    function selectNode(nodeId) {
+      if (!nodeById.has(nodeId)) return;
+      nodeElements.forEach((node) => node.classList.remove("selected"));
+      const node = nodeById.get(nodeId);
+      node.classList.add("selected");
+      state.selectedNode = nodeId;
+      els.nodeInspector.textContent = nodeDescriptions[nodeId] || "暂无该节点说明";
+    }
+
+    function init() {
+      renderScenarioButtons();
+      renderProgress();
+      renderLog();
+      renderStepCards();
+      updateStatus(null);
+      renderTag(null);
+      renderMethods(null);
+      renderAnchors(null);
+      renderAdvanced(null);
+      setRunState(false);
+      drawStaticLinks();
+      bindEvents();
+    }
+
+    init();
+  </script>
+</body>
+</html>

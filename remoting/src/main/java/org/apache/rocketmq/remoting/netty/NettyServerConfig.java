@@ -16,38 +16,91 @@
  */
 package org.apache.rocketmq.remoting.netty;
 
+/**
+ * Netty 服务端配置
+ */
 public class NettyServerConfig implements Cloneable {
 
     /**
      * Bind address may be hostname, IPv4 or IPv6.
      * By default, it's wildcard address, listening all network interfaces.
+     * <br>
+     * 绑定地址可为 hostname, IPv4 或 IPv6, 默认使用通配地址, 监听所有网络接口
      */
     private String bindAddress = "0.0.0.0";
+    /**
+     * 服务端监听端口
+     */
     private int listenPort = 0;
+    /**
+     * 服务端业务工作线程数量
+     */
     private int serverWorkerThreads = 8;
+    /**
+     * 服务端回调执行线程数量
+     */
     private int serverCallbackExecutorThreads = 0;
+    /**
+     * 服务端 Selector 线程数量
+     */
     private int serverSelectorThreads = 3;
+    /**
+     * 服务端单向调用并发信号量阈值
+     */
     private int serverOnewaySemaphoreValue = 256;
+    /**
+     * 服务端异步调用并发信号量阈值
+     */
     private int serverAsyncSemaphoreValue = 64;
+    /**
+     * 服务端通道最大空闲时间, 单位为秒
+     */
     private int serverChannelMaxIdleTimeSeconds = 120;
 
+    /**
+     * 服务端 Socket 发送缓冲区大小
+     */
     private int serverSocketSndBufSize = NettySystemConfig.socketSndbufSize;
+    /**
+     * 服务端 Socket 接收缓冲区大小
+     */
     private int serverSocketRcvBufSize = NettySystemConfig.socketRcvbufSize;
+    /**
+     * 写缓冲区高水位线
+     */
     private int writeBufferHighWaterMark = NettySystemConfig.writeBufferHighWaterMark;
+    /**
+     * 写缓冲区低水位线
+     */
     private int writeBufferLowWaterMark = NettySystemConfig.writeBufferLowWaterMark;
+    /**
+     * 服务端 Socket backlog 大小
+     */
     private int serverSocketBacklog = NettySystemConfig.socketBacklog;
+    /**
+     * 是否启用服务端 Netty Worker Group
+     */
     private boolean serverNettyWorkerGroupEnable = true;
+    /**
+     * 是否启用服务端 Pooled ByteBuf 分配器
+     */
     private boolean serverPooledByteBufAllocatorEnable = true;
 
+    /**
+     * 是否启用优雅关闭
+     */
     private boolean enableShutdownGracefully = false;
+    /**
+     * 优雅关闭等待时间, 单位为秒
+     */
     private int shutdownWaitTimeSeconds = 30;
 
     /**
      * make install
-     *
-     *
      * ../glibc-2.10.1/configure \ --prefix=/usr \ --with-headers=/usr/include \
      * --host=x86_64-linux-gnu \ --build=x86_64-pc-linux-gnu \ --without-gd
+     * <br>
+     * 该段内容为 glibc 编译安装示例命令
      */
     private boolean useEpollNativeSelector = false;
 
@@ -155,6 +208,12 @@ public class NettyServerConfig implements Cloneable {
         this.useEpollNativeSelector = useEpollNativeSelector;
     }
 
+    /**
+     * 克隆当前配置对象
+     *
+     * @return 配置对象副本
+     * @throws CloneNotSupportedException 不支持克隆时抛出
+     */
     @Override
     public Object clone() throws CloneNotSupportedException {
         return super.clone();

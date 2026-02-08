@@ -17,21 +17,49 @@
 
 /*
   $Id: QueueData.java 1835 2013-05-16 02:00:50Z vintagewang@apache.org $
+  历史版本标识
  */
 package org.apache.rocketmq.remoting.protocol.route;
 
+/**
+ * 队列路由数据
+ */
 public class QueueData implements Comparable<QueueData> {
+    /**
+     * Broker 名称
+     */
     private String brokerName;
+    /**
+     * 可读队列数量
+     */
     private int readQueueNums;
+    /**
+     * 可写队列数量
+     */
     private int writeQueueNums;
+    /**
+     * 队列权限位
+     */
     private int perm;
+    /**
+     * Topic 系统标记
+     */
     private int topicSysFlag;
 
+    /**
+     * 创建空队列路由数据
+     */
     public QueueData() {
 
     }
 
+    /**
+     * 使用已有对象构造副本
+     *
+     * @param queueData 源队列路由数据
+     */
     // Deep copy QueueData
+    // 深拷贝 QueueData 对象
     public QueueData(QueueData queueData) {
         this.brokerName = queueData.brokerName;
         this.readQueueNums = queueData.readQueueNums;
@@ -72,6 +100,11 @@ public class QueueData implements Comparable<QueueData> {
         this.topicSysFlag = topicSysFlag;
     }
 
+    /**
+     * 计算对象哈希值
+     *
+     * @return 当前对象哈希值
+     */
     @Override
     public int hashCode() {
         final int prime = 31;
@@ -84,6 +117,12 @@ public class QueueData implements Comparable<QueueData> {
         return result;
     }
 
+    /**
+     * 判断两个队列路由对象是否相等
+     *
+     * @param obj 待比较对象
+     * @return 相等时返回 true
+     */
     @Override
     public boolean equals(Object obj) {
         if (this == obj)
@@ -107,6 +146,11 @@ public class QueueData implements Comparable<QueueData> {
         return topicSysFlag == other.topicSysFlag;
     }
 
+    /**
+     * 生成对象可读字符串
+     *
+     * @return 当前对象字符串
+     */
     @Override
     public String toString() {
         return "QueueData [brokerName=" + brokerName + ", readQueueNums=" + readQueueNums
@@ -114,6 +158,12 @@ public class QueueData implements Comparable<QueueData> {
             + "]";
     }
 
+    /**
+     * 按 Broker 名称进行字典序比较
+     *
+     * @param o 另一个队列路由对象
+     * @return 比较结果
+     */
     @Override
     public int compareTo(QueueData o) {
         return this.brokerName.compareTo(o.getBrokerName());

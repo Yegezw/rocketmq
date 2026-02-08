@@ -17,31 +17,69 @@
 
 /**
  * $Id: SubscriptionData.java 1835 2013-05-16 02:00:50Z vintagewang@apache.org $
+ * 订阅信息数据结构
  */
 package org.apache.rocketmq.remoting.protocol.heartbeat;
 
 import com.alibaba.fastjson.annotation.JSONField;
-import java.util.HashSet;
-import java.util.Set;
 import org.apache.rocketmq.common.filter.ExpressionType;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public class SubscriptionData implements Comparable<SubscriptionData> {
+    /**
+     * 订阅全部标签的通配符
+     */
     public final static String SUB_ALL = "*";
+    /**
+     * 是否启用类过滤模式
+     */
     private boolean classFilterMode = false;
+    /**
+     * 订阅主题名称
+     */
     private String topic;
+    /**
+     * 原始订阅表达式
+     */
     private String subString;
+    /**
+     * 标签集合
+     */
     private Set<String> tagsSet = new HashSet<>();
+    /**
+     * 标签哈希码集合
+     */
     private Set<Integer> codeSet = new HashSet<>();
+    /**
+     * 订阅版本时间戳
+     */
     private long subVersion = System.currentTimeMillis();
+    /**
+     * 过滤表达式类型
+     */
     private String expressionType = ExpressionType.TAG;
 
+    /**
+     * 类过滤源码内容
+     */
     @JSONField(serialize = false)
     private String filterClassSource;
 
+    /**
+     * 创建空订阅数据对象
+     */
     public SubscriptionData() {
 
     }
 
+    /**
+     * 使用主题和订阅表达式创建订阅数据对象
+     *
+     * @param topic     主题名称
+     * @param subString 订阅表达式
+     */
     public SubscriptionData(String topic, String subString) {
         super();
         this.topic = topic;
@@ -112,6 +150,11 @@ public class SubscriptionData implements Comparable<SubscriptionData> {
         this.expressionType = expressionType;
     }
 
+    /**
+     * 计算对象哈希值用于哈希容器存取
+     *
+     * @return 当前对象哈希值
+     */
     @Override
     public int hashCode() {
         final int prime = 31;
@@ -125,6 +168,12 @@ public class SubscriptionData implements Comparable<SubscriptionData> {
         return result;
     }
 
+    /**
+     * 判断两个订阅对象的关键属性是否一致
+     *
+     * @param obj 待比较对象
+     * @return 属性一致时返回 true
+     */
     @Override
     public boolean equals(Object obj) {
         if (this == obj)
@@ -166,6 +215,11 @@ public class SubscriptionData implements Comparable<SubscriptionData> {
         return true;
     }
 
+    /**
+     * 生成对象可读字符串
+     *
+     * @return 当前对象字符串
+     */
     @Override
     public String toString() {
         return "SubscriptionData [classFilterMode=" + classFilterMode + ", topic=" + topic + ", subString="
@@ -173,6 +227,12 @@ public class SubscriptionData implements Comparable<SubscriptionData> {
             + ", expressionType=" + expressionType + "]";
     }
 
+    /**
+     * 按主题和订阅表达式进行字典序比较
+     *
+     * @param other 另一个订阅对象
+     * @return 比较结果
+     */
     @Override
     public int compareTo(SubscriptionData other) {
         String thisValue = this.topic + "@" + this.subString;
