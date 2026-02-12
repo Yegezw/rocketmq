@@ -1,0 +1,2125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RocketMQ NameSrv 启动到连接处理流程图</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+    :root {
+      color-scheme: dark;
+      --bg: #070f1d;
+      --bg-soft: #0f172a;
+      --panel: rgba(15, 23, 42, 0.82);
+      --panel-strong: rgba(15, 23, 42, 0.94);
+      --panel-elev: rgba(30, 41, 59, 0.82);
+      --border: rgba(148, 163, 184, 0.24);
+      --text: #dbe5f3;
+      --text-strong: #f8fafc;
+      --muted: #93a4bf;
+      --accent: #38bdf8;
+      --accent-2: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 10px;
+      --shadow: 0 20px 38px rgba(2, 6, 23, 0.5);
+      --shadow-soft: 0 10px 24px rgba(2, 6, 23, 0.36);
+
+      --lane-main: rgba(59, 130, 246, 0.14);
+      --lane-boss: rgba(14, 165, 233, 0.12);
+      --lane-selector: rgba(34, 197, 94, 0.12);
+      --lane-codec: rgba(167, 139, 250, 0.12);
+      --lane-client: rgba(16, 185, 129, 0.12);
+      --lane-default: rgba(249, 115, 22, 0.14);
+      --lane-event: rgba(244, 114, 182, 0.12);
+      --lane-batch: rgba(234, 179, 8, 0.12);
+
+      --edge: rgba(148, 163, 184, 0.28);
+      --inbound: #38bdf8;
+      --outbound: #22c55e;
+      --event: #f472b6;
+      --warn-tone: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 480px at 8% -20%, rgba(56, 189, 248, 0.2), transparent 62%),
+        radial-gradient(920px 520px at 92% -16%, rgba(34, 197, 94, 0.16), transparent 62%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(7, 15, 29, 1));
+      overflow: auto;
+    }
+
+    .skip-link {
+      position: absolute;
+      left: 12px;
+      top: -52px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #0f172a;
+      z-index: 99;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 600;
+      transition: top 0.2s ease;
+    }
+
+    .skip-link:focus {
+      top: 12px;
+    }
+
+    header {
+      min-height: 70px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-strong);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      position: sticky;
+      top: 0;
+      z-index: 30;
+    }
+
+    .title-wrap {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(16px, 1.3vw, 21px);
+      color: var(--text-strong);
+      line-height: 1.2;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 65vw;
+    }
+
+    .status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .status span {
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.75), rgba(15, 23, 42, 0.94));
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 5px 10px;
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+    }
+
+    .container {
+      min-height: calc(100vh - 70px);
+      display: grid;
+      grid-template-columns: minmax(290px, 350px) minmax(700px, 1fr) minmax(280px, 330px);
+      grid-template-rows: 1fr minmax(210px, auto);
+      grid-template-areas:
+        "left stage right"
+        "log log right";
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .left-panel {
+      grid-area: left;
+      position: sticky;
+      top: 84px;
+      max-height: calc(100vh - 96px);
+      overflow: auto;
+    }
+
+    .stage-panel {
+      grid-area: stage;
+      min-width: 0;
+    }
+
+    .right-panel {
+      grid-area: right;
+      min-width: 0;
+    }
+
+    .log-panel {
+      grid-area: log;
+      min-width: 0;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.76));
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 12px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      color: var(--accent);
+      letter-spacing: 0.72px;
+      text-transform: uppercase;
+      font-family: var(--mono);
+    }
+
+    .group {
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.74), rgba(15, 23, 42, 0.88));
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 10px;
+      margin-bottom: 10px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .group:last-child {
+      margin-bottom: 0;
+    }
+
+    .group-title {
+      font-size: 10px;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-bottom: 8px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 4px 0;
+      line-height: 1.45;
+    }
+
+    .scenario-row {
+      display: grid;
+      gap: 7px;
+    }
+
+    .scenario-row button,
+    .control-row button {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.95));
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: transform 0.16s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .scenario-row button:hover,
+    .control-row button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(56, 189, 248, 0.55);
+      box-shadow: 0 10px 22px rgba(2, 6, 23, 0.35);
+    }
+
+    .scenario-row button.active {
+      border-color: rgba(56, 189, 248, 0.7);
+      box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.36);
+    }
+
+    .control-row {
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .control-row.row-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .control-row.row-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    button.warn {
+      border-color: rgba(245, 158, 11, 0.45);
+      color: #fde68a;
+    }
+
+    button.secondary {
+      border-color: rgba(34, 197, 94, 0.45);
+      color: #bbf7d0;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      margin: 6px 0;
+      accent-color: #38bdf8;
+    }
+
+    .progress-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .stage-toolbar {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.92));
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .badge {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .run-state {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pulse-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #64748b;
+      box-shadow: 0 0 0 0 rgba(100, 116, 139, 0.45);
+    }
+
+    .pulse-dot.running {
+      background: var(--accent-2);
+      animation: pulse 1.2s infinite;
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.44); }
+      70% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+
+    .stage-canvas {
+      position: relative;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      overflow: hidden;
+      padding: 0;
+      min-height: 560px;
+    }
+
+    .flow-lines {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .edge {
+      fill: none;
+      stroke: var(--edge);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .edge.inbound {
+      stroke: rgba(56, 189, 248, 0.52);
+    }
+
+    .edge.outbound {
+      stroke: rgba(34, 197, 94, 0.52);
+    }
+
+    .edge.event {
+      stroke: rgba(244, 114, 182, 0.56);
+    }
+
+    .edge.warn {
+      stroke: rgba(245, 158, 11, 0.58);
+    }
+
+    .edge.dynamic {
+      stroke-width: 3;
+      stroke-dasharray: 8 7;
+      animation: stream 0.9s linear infinite;
+      filter: drop-shadow(0 0 5px rgba(15, 23, 42, 0.65));
+    }
+
+    @keyframes stream {
+      to { stroke-dashoffset: -30; }
+    }
+
+    .stage-grid {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      gap: 10px;
+    }
+
+    .lane {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 8px;
+      background: rgba(15, 23, 42, 0.5);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .lane.active {
+      border-color: rgba(56, 189, 248, 0.72);
+      box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.24);
+    }
+
+    .lane.main { background: var(--lane-main); }
+    .lane.boss { background: var(--lane-boss); }
+    .lane.selector { background: var(--lane-selector); }
+    .lane.codec { background: var(--lane-codec); }
+    .lane.client { background: var(--lane-client); }
+    .lane.default { background: var(--lane-default); }
+    .lane.event { background: var(--lane-event); }
+    .lane.batch { background: var(--lane-batch); }
+
+    .lane-title {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-bottom: 8px;
+      letter-spacing: 0.2px;
+    }
+
+    .lane-content {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .node {
+      min-width: 124px;
+      max-width: 190px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 7px 8px;
+      font-size: 11px;
+      color: var(--text);
+      background: rgba(30, 41, 59, 0.74);
+      transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: none;
+      display: grid;
+      grid-template-rows: repeat(3, 1.25em);
+      gap: 4px;
+      align-content: start;
+      overflow: hidden;
+      cursor: default;
+    }
+
+    .node:hover {
+      border-color: rgba(56, 189, 248, 0.72);
+      box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.24);
+    }
+
+    .node .title {
+      color: var(--text-strong);
+      font-size: 11px;
+      font-weight: 600;
+      margin: 0;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .node .desc {
+      font-size: 11px;
+      color: var(--text);
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .thread-tag {
+      margin: 0;
+      display: block;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      font-size: 10px;
+      color: #bcd4ef;
+      font-family: var(--mono);
+      background: transparent;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .node.active {
+      border-color: rgba(56, 189, 248, 0.78);
+      transform: none;
+      box-shadow: none;
+    }
+
+    .node[data-node="connect-manage"],
+    .node[data-node="event-queue"],
+    .node[data-node="event-drop"],
+    .node[data-node="process-command"],
+    .node[data-node="system-busy"],
+    .node[data-node="services-start"],
+    .node[data-node="not-ready"],
+    .node[data-node="housekeeping"],
+    .node[data-node="unreg-queue"],
+    .node[data-node="unreg-offer-fail"],
+    .node[data-node="batch-unreg"] {
+      min-width: 200px;
+      max-width: 240px;
+    }
+
+    .node[data-node="route-destroy"],
+    .node[data-node="unregister-broker"] {
+      min-width: 238px;
+      max-width: 270px;
+    }
+
+    .node[data-node="connect-manage"] .title,
+    .node[data-node="event-queue"] .title,
+    .node[data-node="event-drop"] .title,
+    .node[data-node="process-command"] .title,
+    .node[data-node="system-busy"] .title,
+    .node[data-node="services-start"] .title,
+    .node[data-node="not-ready"] .title,
+    .node[data-node="housekeeping"] .title,
+    .node[data-node="unreg-queue"] .title,
+    .node[data-node="unreg-offer-fail"] .title,
+    .node[data-node="batch-unreg"] .title,
+    .node[data-node="route-destroy"] .title,
+    .node[data-node="unregister-broker"] .title {
+      white-space: nowrap;
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+
+    .node[data-node="event-queue"] {
+      min-width: 255px;
+      max-width: 290px;
+    }
+
+    .node[data-node="services-start"] {
+      min-width: 220px;
+      max-width: 270px;
+    }
+
+    .node[data-node="system-busy"],
+    .node[data-node="unreg-offer-fail"] {
+      min-width: 220px;
+      max-width: 260px;
+    }
+
+    .legend {
+      display: grid;
+      gap: 7px;
+      margin-top: 6px;
+    }
+
+    .pill {
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.72);
+      font-size: 11px;
+      color: #ccdaef;
+      line-height: 1.45;
+    }
+
+    .method-list,
+    .source-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .method-list li,
+    .source-list li {
+      min-width: 0;
+    }
+
+    .source-list li {
+      word-break: break-all;
+    }
+
+    code {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #c4edff;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      border-radius: 6px;
+      padding: 1px 5px;
+    }
+
+    .method-list code,
+    .source-list code {
+      display: inline-block;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .detail {
+      font-size: 12px;
+      line-height: 1.5;
+      color: #cfdbef;
+      min-height: 70px;
+    }
+
+    .flow-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .flow-step {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.75), rgba(15, 23, 42, 0.94));
+      font-size: 12px;
+      color: var(--text);
+      cursor: pointer;
+      transition: border-color 0.2s ease, transform 0.15s ease;
+    }
+
+    .flow-step:hover {
+      transform: translateY(-1px);
+      border-color: rgba(56, 189, 248, 0.55);
+    }
+
+    .flow-step.active {
+      border-color: rgba(56, 189, 248, 0.75);
+      box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.24);
+    }
+
+    .flow-step .idx {
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 10px;
+      margin-bottom: 4px;
+      letter-spacing: 0.2px;
+    }
+
+    .log {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: rgba(2, 6, 23, 0.55);
+      min-height: 110px;
+      max-height: 230px;
+      overflow: auto;
+      padding: 8px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .log-item {
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 8px;
+      padding: 7px;
+      background: rgba(15, 23, 42, 0.72);
+      font-size: 11px;
+      line-height: 1.42;
+      color: #d5e4f7;
+    }
+
+    .log-item .meta {
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-bottom: 3px;
+      font-size: 10px;
+    }
+
+    @media (max-width: 1380px) {
+      .container {
+        grid-template-columns: minmax(270px, 320px) minmax(540px, 1fr);
+        grid-template-areas:
+          "left stage"
+          "log stage"
+          "right right";
+      }
+
+      .right-panel {
+        max-width: none;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .container {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "left"
+          "stage"
+          "right"
+          "log";
+      }
+
+      .left-panel {
+        position: static;
+        max-height: none;
+      }
+
+      .subtitle {
+        max-width: 100%;
+      }
+
+      .status {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        scroll-behavior: auto;
+      }
+
+      .pulse-dot.running,
+      .edge.dynamic {
+        animation: none;
+      }
+
+      .node,
+      .flow-step,
+      button {
+        transition: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">跳转到主要内容</a>
+  <header>
+    <div class="title-wrap">
+      <h1>RocketMQ NameSrv 启动到连接并处理连接流程图</h1>
+      <div class="subtitle">主线 + 请求分发子分支 + 连接回收子分支（线程模型严格对应源码）</div>
+    </div>
+    <div class="status">
+      <span id="statusScenario">场景: 主线流程</span>
+      <span id="statusStep">当前步骤: -</span>
+      <span id="statusThread">线程: -</span>
+      <span id="statusIndex">进度: 0 / 0</span>
+    </div>
+  </header>
+
+  <main class="container" id="mainContent">
+    <section class="panel left-panel">
+      <h2>控制台</h2>
+
+      <div class="group">
+        <div class="group-title">场景选择</div>
+        <div class="scenario-row" id="scenarioRow">
+          <button data-scenario="main" class="active" aria-pressed="true">主线：启动 → 接收连接 → 请求处理</button>
+          <button data-scenario="dispatch" aria-pressed="false">子分支 A：请求分发（GET_ROUTEINFO vs Default）</button>
+          <button data-scenario="cleanup" aria-pressed="false">子分支 B：连接回收（idle/close/exception）</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">播放控制</div>
+        <div class="control-row row-3">
+          <button id="btnReset">重置</button>
+          <button id="btnPlay" class="secondary">播放</button>
+          <button id="btnPause" class="warn">暂停</button>
+        </div>
+        <div class="control-row row-2">
+          <button id="btnPrev">上一步</button>
+          <button id="btnNext">下一步</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">进度导航</div>
+        <input id="stepRange" type="range" min="0" max="0" step="1" value="0" aria-label="步骤导航" />
+        <div class="progress-row">
+          <span id="progressText">0 / 0</span>
+          <span id="progressPercent">0%</span>
+        </div>
+        <div class="hint">拖动滑块可跳转步骤，自动播放将暂停。</div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">快捷键</div>
+        <div class="hint">Space：播放/暂停</div>
+        <div class="hint">← / →：上一步 / 下一步</div>
+        <div class="hint">R：重置</div>
+        <div class="hint">1 / 2 / 3：切换场景（主线 / 分发 / 回收）</div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">准确性边界</div>
+        <div class="hint">仅覆盖 NameSrv 主进程，不包含 ControllerManager 分支。</div>
+        <div class="hint">clusterTest=true 时默认处理器切换为 ClusterTestRequestProcessor（本页按默认 clusterTest=false 展示）。</div>
+        <div class="hint">TLS/HAProxy 仅在说明中点到，不展开独立动画场景。</div>
+        <div class="hint">源码锚点仅显示“类/方法符号 + 说明”，不显示行号。</div>
+      </div>
+    </section>
+
+    <section class="panel stage-panel">
+      <h2>流程图（线程泳道）</h2>
+      <div class="stage-toolbar">
+        <div class="badge" id="scenarioBadge">场景：主线流程</div>
+        <div class="run-state"><span id="runDot" class="pulse-dot"></span><span id="runText">状态：已暂停</span></div>
+      </div>
+
+      <div class="stage-canvas" id="stageCanvas">
+        <svg id="flowLines" class="flow-lines" aria-hidden="true"></svg>
+
+        <div class="stage-grid">
+          <div class="lane main" data-lane="main">
+            <div class="lane-title">控制与调度线程（main / NSScheduledThread / NSScanScheduledThread）</div>
+            <div class="lane-content">
+              <div class="node" data-node="startup">
+                <div class="title">NamesrvStartup</div>
+                命令解析/加载配置
+                <div class="thread-tag">main</div>
+              </div>
+              <div class="node" data-node="controller">
+                <div class="title">NamesrvController</div>
+                create + initialize
+                <div class="thread-tag">main</div>
+              </div>
+              <div class="node" data-node="register">
+                <div class="title">registerProcessor</div>
+                注册请求处理器
+                <div class="thread-tag">main</div>
+              </div>
+              <div class="node" data-node="services-start">
+                <div class="title">start() 收尾启动</div>
+                remotingClient/fileWatch/routeInfo
+                <div class="thread-tag">main</div>
+              </div>
+              <div class="node" data-node="scan-broker">
+                <div class="title">scanNotActiveBroker</div>
+                定时扫描超时 broker
+                <div class="thread-tag">NSScanScheduledThread</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane boss" data-lane="boss">
+            <div class="lane-title">Boss EventLoop（NettyNIOBoss_* / NettyEPOLLBoss_*）</div>
+            <div class="lane-content">
+              <div class="node" data-node="bind">
+                <div class="title">ServerBootstrap.bind</div>
+                监听端口并进入 accept
+                <div class="thread-tag">Boss EventLoop</div>
+              </div>
+              <div class="node" data-node="accept">
+                <div class="title">OP_ACCEPT</div>
+                接收新连接
+                <div class="thread-tag">Boss EventLoop</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane selector" data-lane="selector">
+            <div class="lane-title">Selector EventLoop（NettyServerNIOSelector_* / NettyServerEPOLLSelector_*）</div>
+            <div class="lane-content">
+              <div class="node" data-node="child-register">
+                <div class="title">childGroup.register</div>
+                子连接注册到 selector
+                <div class="thread-tag">Selector EventLoop</div>
+              </div>
+              <div class="node" data-node="pipeline-init">
+                <div class="title">configChannel</div>
+                装配 Handshake/Encoder/Decoder
+                <div class="thread-tag">Selector EventLoop</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane codec" data-lane="codec">
+            <div class="lane-title">NettyServerCodecThread_*（DefaultEventExecutorGroup）</div>
+            <div class="lane-content">
+              <div class="node" data-node="connect-manage">
+                <div class="title">NettyConnectManageHandler</div>
+                channelActive/idle/close/exception
+                <div class="thread-tag">Codec Thread</div>
+              </div>
+              <div class="node" data-node="decoder">
+                <div class="title">NettyDecoder</div>
+                ByteBuf → RemotingCommand
+                <div class="thread-tag">Codec Thread</div>
+              </div>
+              <div class="node" data-node="server-handler">
+                <div class="title">NettyServerHandler</div>
+                processMessageReceived
+                <div class="thread-tag">Codec Thread</div>
+              </div>
+              <div class="node" data-node="process-command">
+                <div class="title">processRequestCommand</div>
+                根据 RequestCode 分发
+                <div class="thread-tag">Codec Thread</div>
+              </div>
+              <div class="node" data-node="system-busy">
+                <div class="title">SYSTEM_BUSY 返回</div>
+                rejectRequest/线程池拒绝
+                <div class="thread-tag">Codec Thread</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane client" data-lane="client">
+            <div class="lane-title">ClientRequestExecutorThread_*（GET_ROUTEINFO_BY_TOPIC）</div>
+            <div class="lane-content">
+              <div class="node" data-node="client-processor">
+                <div class="title">ClientRequestProcessor</div>
+                getRouteInfoByTopic
+                <div class="thread-tag">ClientRequestExecutor</div>
+              </div>
+              <div class="node" data-node="client-response">
+                <div class="title">writeResponse</div>
+                路由查询响应回写
+                <div class="thread-tag">ClientRequestExecutor</div>
+              </div>
+              <div class="node" data-node="not-ready">
+                <div class="title">not ready 返回</div>
+                needWaitForService 门禁
+                <div class="thread-tag">ClientRequestExecutor</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane default" data-lane="default">
+            <div class="lane-title">RemotingExecutorThread_*（默认处理器线程池）</div>
+            <div class="lane-content">
+              <div class="node" data-node="default-processor">
+                <div class="title">DefaultRequestProcessor</div>
+                RegisterBroker 等默认请求
+                <div class="thread-tag">RemotingExecutor</div>
+              </div>
+              <div class="node" data-node="default-response">
+                <div class="title">writeResponse</div>
+                默认请求响应回写
+                <div class="thread-tag">RemotingExecutor</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane event" data-lane="event">
+            <div class="lane-title">NettyEventExecutor（连接事件分发线程）</div>
+            <div class="lane-content">
+              <div class="node" data-node="event-queue">
+                <div class="title">putNettyEvent</div>
+                CONNECT/CLOSE/IDLE/EXCEPTION 入队
+                <div class="thread-tag">Codec → Event Queue</div>
+              </div>
+              <div class="node" data-node="event-drop">
+                <div class="title">事件队列丢弃</div>
+                超过 10000 上限后丢弃
+                <div class="thread-tag">Codec Thread</div>
+              </div>
+              <div class="node" data-node="event-executor">
+                <div class="title">NettyEventExecutor.run</div>
+                拉取事件并回调 listener
+                <div class="thread-tag">NettyEventExecutor</div>
+              </div>
+              <div class="node" data-node="housekeeping">
+                <div class="title">BrokerHousekeepingService</div>
+                onChannelClose/Idle/Exception
+                <div class="thread-tag">NettyEventExecutor</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane batch" data-lane="batch">
+            <div class="lane-title">BatchUnregistrationService（批量反注册线程）</div>
+            <div class="lane-content">
+              <div class="node" data-node="route-destroy">
+                <div class="title">RouteInfoManager#onChannelDestroy</div>
+                组装反注册请求
+                <div class="thread-tag">Event / Scan Thread</div>
+              </div>
+              <div class="node" data-node="unreg-queue">
+                <div class="title">submitUnRegisterBrokerRequest</div>
+                入队待批量处理
+                <div class="thread-tag">LinkedBlockingQueue</div>
+              </div>
+              <div class="node" data-node="unreg-offer-fail">
+                <div class="title">反注册入队失败</div>
+                queue.offer=false 分支
+                <div class="thread-tag">Event / Scan Thread</div>
+              </div>
+              <div class="node" data-node="batch-unreg">
+                <div class="title">BatchUnregistrationService.run</div>
+                take + drainTo + 批量执行
+                <div class="thread-tag">BatchUnregistrationService</div>
+              </div>
+              <div class="node" data-node="unregister-broker">
+                <div class="title">RouteInfoManager#unRegisterBroker</div>
+                清理 broker/topic 路由状态
+                <div class="thread-tag">BatchUnregistrationService</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel right-panel">
+      <h2>步骤解析</h2>
+
+      <div class="group">
+        <div class="group-title">线程模型说明</div>
+        <div class="legend">
+          <div class="pill">Boss EventLoop：监听端口并接收连接。</div>
+          <div class="pill">Selector EventLoop：子连接注册与 channel 初始化流程。</div>
+          <div class="pill">NettyServerCodecThread：执行 pipeline 中关键 handler（默认 serverNettyWorkerGroupEnable=true）。</div>
+          <div class="pill">若 serverNettyWorkerGroupEnable=false，handler 将回到 I/O EventLoop 线程执行。</div>
+          <div class="pill">ClientRequestExecutor / RemotingExecutor：请求分发后的业务执行线程池。</div>
+          <div class="pill">NettyEventExecutor：消费连接事件；CONNECT 分支不触发路由清理。</div>
+          <div class="pill">BatchUnregistrationService：异步批量反注册 broker。</div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">当前调用链</div>
+        <ul id="methodList" class="method-list"></ul>
+      </div>
+
+      <div class="group">
+        <div class="group-title">源码锚点（无行号）</div>
+        <ul id="sourceAnchorList" class="source-list"></ul>
+      </div>
+
+      <div class="group">
+        <div class="group-title">步骤说明</div>
+        <div id="stepDetail" class="detail">选择步骤后显示详细说明。</div>
+      </div>
+    </section>
+
+    <section class="panel log-panel">
+      <h2>流程步骤与日志</h2>
+      <div id="flowSteps" class="flow-steps"></div>
+      <div id="logList" class="log"></div>
+    </section>
+  </main>
+
+  <script>
+    /** @typedef {{symbol: string, note: string}} Anchor */
+    /** @typedef {{id: string, title: string, thread: string, lane: string, methods: string[], anchors: Anchor[], highlightNodes: string[], flowEdges: {from: string, to: string, tone: string}[], detail: string, delayMs: number}} Step */
+    /** @typedef {{id: string, title: string, badge: string, steps: Step[]}} Scenario */
+
+    /** @type {Record<string, Scenario>} */
+    const scenarios = {
+      main: {
+        id: "main",
+        title: "主线流程",
+        badge: "场景：主线（启动 → 接收连接 → 请求处理）",
+        steps: [
+          {
+            id: "main-1",
+            title: "解析启动参数并构建基础配置",
+            thread: "main",
+            lane: "main",
+            methods: [
+              "NamesrvStartup#main0",
+              "NamesrvStartup#parseCommandlineAndConfigFile",
+              "NettyServerConfig#setListenPort(9876)"
+            ],
+            anchors: [
+              { symbol: "NamesrvStartup#parseCommandlineAndConfigFile", note: "创建 NamesrvConfig/NettyServerConfig 并设置默认监听端口 9876" },
+              { symbol: "NettyServerConfig#getListenPort/setListenPort", note: "服务端监听端口配置定义" }
+            ],
+            highlightNodes: ["startup"],
+            flowEdges: [],
+            detail: "主线程完成配置加载与对象初始化。默认情况下 NameSrv 监听端口是 9876（可被配置覆盖）。",
+            delayMs: 1500
+          },
+          {
+            id: "main-2",
+            title: "创建 NamesrvController 并进入 initialize",
+            thread: "main",
+            lane: "main",
+            methods: [
+              "NamesrvStartup#createNamesrvController",
+              "NamesrvController#NamesrvController",
+              "NamesrvController#initialize"
+            ],
+            anchors: [
+              { symbol: "NamesrvStartup#createNamesrvController", note: "组装并返回 NamesrvController" },
+              { symbol: "NamesrvController#initialize", note: "初始化入口：网络组件、线程池、处理器、定时任务" }
+            ],
+            highlightNodes: ["startup", "controller"],
+            flowEdges: [{ from: "startup", to: "controller", tone: "inbound" }],
+            detail: "initialize 不启动监听，仅完成 NameSrv 的运行期组件初始化。",
+            delayMs: 1500
+          },
+          {
+            id: "main-3",
+            title: "初始化网络与线程池，注册请求处理器",
+            thread: "main",
+            lane: "main",
+            methods: [
+              "NamesrvController#initiateNetworkComponents",
+              "NamesrvController#initiateThreadExecutors",
+              "NamesrvController#registerProcessor",
+              "NamesrvController#startScheduleService"
+            ],
+            anchors: [
+              { symbol: "NamesrvController#initiateNetworkComponents", note: "创建 NettyRemotingServer(NettyServerConfig, BrokerHousekeepingService)" },
+              { symbol: "NamesrvController#registerProcessor", note: "GET_ROUTEINFO_BY_TOPIC 绑定 ClientRequestProcessor，其余走 DefaultRequestProcessor" },
+              { symbol: "NamesrvConfig#getClientRequestThreadPoolNums/getDefaultThreadPoolNums", note: "默认线程池参数：client=8，default=16" }
+            ],
+            highlightNodes: ["controller", "register"],
+            flowEdges: [{ from: "controller", to: "register", tone: "inbound" }],
+            detail: "请求处理模型在初始化阶段就固定：路由查询与默认请求分别进入不同线程池。",
+            delayMs: 1700
+          },
+          {
+            id: "main-4",
+            title: "启动 remotingServer 并完成 bind",
+            thread: "main → Boss EventLoop",
+            lane: "boss",
+            methods: [
+              "NamesrvController#start",
+              "NettyRemotingServer#start",
+              "NettyRemotingServer#initServerBootstrap",
+              "ServerBootstrap#bind"
+            ],
+            anchors: [
+              { symbol: "NamesrvController#start", note: "触发 remotingServer.start 并启动 routeInfoManager" },
+              { symbol: "NettyRemotingServer#start", note: "创建 DefaultEventExecutorGroup 并绑定端口" },
+              { symbol: "NettyRemotingServer#initServerBootstrap", note: "配置 boss/selector group 与 childHandler" }
+            ],
+            highlightNodes: ["register", "bind"],
+            flowEdges: [{ from: "register", to: "bind", tone: "inbound" }],
+            detail: "bind 完成后 NameSrv 可接收连接；Boss 线程负责 OP_ACCEPT。",
+            delayMs: 1600
+          },
+          {
+            id: "main-4b",
+            title: "start() 收尾：启动辅助服务与反注册服务线程",
+            thread: "main",
+            lane: "main",
+            methods: [
+              "NamesrvController#start",
+              "RemotingClient#updateNameServerAddressList",
+              "RemotingClient#start",
+              "RouteInfoManager#start",
+              "BatchUnregistrationService#start"
+            ],
+            anchors: [
+              { symbol: "NamesrvController#start", note: "先 remotingServer.start，再 updateNameServerAddressList + remotingClient.start，最后 routeInfoManager.start" },
+              { symbol: "RouteInfoManager#start", note: "启动 unRegisterService 线程" },
+              { symbol: "BatchUnregistrationService#run", note: "后台等待并批量消费反注册请求" }
+            ],
+            highlightNodes: ["bind", "services-start", "batch-unreg"],
+            flowEdges: [
+              { from: "bind", to: "services-start", tone: "inbound" },
+              { from: "services-start", to: "batch-unreg", tone: "inbound" }
+            ],
+            detail: "NamesrvController.start 在 bind 后会先更新 remotingClient 的 namesrv 地址列表，再启动 remotingClient、可选 fileWatchService，最后启动 RouteInfoManager（其内部启动 BatchUnregistrationService）。",
+            delayMs: 1700
+          },
+          {
+            id: "main-5",
+            title: "Boss 接收连接并转交 child 注册",
+            thread: "Boss EventLoop → Selector EventLoop",
+            lane: "selector",
+            methods: [
+              "NettyRemotingServer#initServerBootstrap",
+              "ChannelInitializer#initChannel",
+              "NettyRemotingServer#configChannel"
+            ],
+            anchors: [
+              { symbol: "NettyRemotingServer#initServerBootstrap", note: "childHandler 指向 configChannel" },
+              { symbol: "NettyRemotingServer#configChannel", note: "为新连接 pipeline 安装 handler" }
+            ],
+            highlightNodes: ["accept", "child-register", "pipeline-init"],
+            flowEdges: [
+              { from: "bind", to: "accept", tone: "inbound" },
+              { from: "accept", to: "child-register", tone: "inbound" },
+              { from: "child-register", to: "pipeline-init", tone: "inbound" }
+            ],
+            detail: "连接建立后进入 child 注册流程，随后装配 Handshake/Encoder/Decoder/Distribution/Idle/ConnectManage/ServerHandler。",
+            delayMs: 1700
+          },
+          {
+            id: "main-6",
+            title: "channelActive 触发 CONNECT 事件（不触发清理）",
+            thread: "NettyServerCodecThread_* + NettyEventExecutor",
+            lane: "event",
+            methods: [
+              "NettyConnectManageHandler#channelActive",
+              "NettyRemotingAbstract#putNettyEvent",
+              "NettyEventExecutor#run",
+              "BrokerHousekeepingService#onChannelConnect"
+            ],
+            anchors: [
+              { symbol: "NettyRemotingServer.NettyConnectManageHandler#channelActive", note: "发送 NettyEventType.CONNECT" },
+              { symbol: "NettyRemotingAbstract.NettyEventExecutor#run", note: "消费 CONNECT 并回调 listener" },
+              { symbol: "BrokerHousekeepingService#onChannelConnect", note: "方法体为空，不做路由清理" }
+            ],
+            highlightNodes: ["connect-manage", "event-queue", "event-executor", "housekeeping"],
+            flowEdges: [
+              { from: "connect-manage", to: "event-queue", tone: "event" },
+              { from: "event-queue", to: "event-executor", tone: "event" },
+              { from: "event-executor", to: "housekeeping", tone: "event" }
+            ],
+            detail: "严格区分：CONNECT 仅通知连接建立；NameSrv 的 onChannelConnect/onChannelActive 均不触发 onChannelDestroy。",
+            delayMs: 1700
+          },
+          {
+            id: "main-7",
+            title: "解码请求并进入 NettyServerHandler",
+            thread: "NettyServerCodecThread_*",
+            lane: "codec",
+            methods: [
+              "NettyDecoder#decode",
+              "NettyServerHandler#channelRead0",
+              "NettyRemotingAbstract#processMessageReceived"
+            ],
+            anchors: [
+              { symbol: "NettyDecoder#decode", note: "LengthFieldBasedFrameDecoder + RemotingCommand.decode" },
+              { symbol: "NettyRemotingServer.NettyServerHandler#channelRead0", note: "转调 remotingAbstract.processMessageReceived" },
+              { symbol: "NettyRemotingAbstract#processMessageReceived", note: "按 REQUEST/RESPONSE 类型分发" }
+            ],
+            highlightNodes: ["decoder", "server-handler"],
+            flowEdges: [
+              { from: "pipeline-init", to: "decoder", tone: "inbound" },
+              { from: "decoder", to: "connect-manage", tone: "inbound" },
+              { from: "connect-manage", to: "server-handler", tone: "inbound" }
+            ],
+            detail: "在默认 serverNettyWorkerGroupEnable=true 下，以上 handler 运行在 NettyServerCodecThread_*；此处省略展示了 RemotingCodeDistributionHandler 与 IdleStateHandler。",
+            delayMs: 1600
+          },
+          {
+            id: "main-8",
+            title: "processRequestCommand 分发到业务线程池",
+            thread: "NettyServerCodecThread_*",
+            lane: "codec",
+            methods: [
+              "NettyRemotingAbstract#processRequestCommand",
+              "ExecutorService#submit(RequestTask)"
+            ],
+            anchors: [
+              { symbol: "NettyRemotingAbstract#processRequestCommand", note: "根据 requestCode 选择 processorPair 并提交 RequestTask" },
+              { symbol: "NamesrvController#registerProcessor", note: "请求码与线程池映射来源" }
+            ],
+            highlightNodes: ["server-handler", "process-command"],
+            flowEdges: [{ from: "server-handler", to: "process-command", tone: "inbound" }],
+            detail: "分发线程与业务处理线程解耦，防止 codec 线程被业务逻辑长时间阻塞。",
+            delayMs: 1600
+          },
+          {
+            id: "main-9",
+            title: "默认请求在线程池执行业务处理",
+            thread: "RemotingExecutorThread_*",
+            lane: "default",
+            methods: [
+              "DefaultRequestProcessor#processRequest",
+              "DefaultRequestProcessor#registerBroker (示例)"
+            ],
+            anchors: [
+              { symbol: "DefaultRequestProcessor#processRequest", note: "默认处理器覆盖注册/心跳/配置等请求" },
+              { symbol: "DefaultRequestProcessor#registerBroker", note: "典型默认请求处理路径" }
+            ],
+            highlightNodes: ["process-command", "default-processor"],
+            flowEdges: [{ from: "process-command", to: "default-processor", tone: "inbound" }],
+            detail: "此处以 REGISTER_BROKER 等默认请求为主线示例；GET_ROUTEINFO 分支见子场景 A。",
+            delayMs: 1600
+          },
+          {
+            id: "main-10",
+            title: "writeResponse 回写响应",
+            thread: "RemotingExecutorThread_*（触发异步写）",
+            lane: "default",
+            methods: [
+              "NettyRemotingAbstract#writeResponse",
+              "Channel#writeAndFlush"
+            ],
+            anchors: [
+              { symbol: "NettyRemotingAbstract#writeResponse", note: "设置 opaque/markResponseType 并 writeAndFlush" },
+              { symbol: "NettyRemotingServer.NettyServerHandler#channelWritabilityChanged", note: "高低水位触发 autoRead 开关" }
+            ],
+            highlightNodes: ["default-processor", "default-response"],
+            flowEdges: [{ from: "default-processor", to: "default-response", tone: "outbound" }],
+            detail: "请求处理完成后响应回写，主线流程到此闭环。",
+            delayMs: 1600
+          }
+        ]
+      },
+      dispatch: {
+        id: "dispatch",
+        title: "请求分发子分支",
+        badge: "场景：子分支 A（GET_ROUTEINFO 与 Default 分流）",
+        steps: [
+          {
+            id: "dispatch-1",
+            title: "收到请求后进入 processRequestCommand",
+            thread: "NettyServerCodecThread_*",
+            lane: "codec",
+            methods: [
+              "NettyServerHandler#channelRead0",
+              "NettyRemotingAbstract#processMessageReceived",
+              "NettyRemotingAbstract#processRequestCommand"
+            ],
+            anchors: [
+              { symbol: "NettyRemotingServer.NettyServerHandler#channelRead0", note: "请求入口" },
+              { symbol: "NettyRemotingAbstract#processRequestCommand", note: "核心分发逻辑" }
+            ],
+            highlightNodes: ["server-handler", "process-command"],
+            flowEdges: [{ from: "server-handler", to: "process-command", tone: "inbound" }],
+            detail: "分发发生在 codec 线程；真正业务处理异步提交到对应线程池。",
+            delayMs: 1500
+          },
+          {
+            id: "dispatch-2",
+            title: "GET_ROUTEINFO_BY_TOPIC 命中专用处理器",
+            thread: "NettyServerCodecThread_*",
+            lane: "codec",
+            methods: [
+              "NamesrvController#registerProcessor",
+              "RemotingServer#registerProcessor(RequestCode.GET_ROUTEINFO_BY_TOPIC, ...)"
+            ],
+            anchors: [
+              { symbol: "NamesrvController#registerProcessor", note: "GET_ROUTEINFO_BY_TOPIC 显式绑定 ClientRequestProcessor" },
+              { symbol: "NamesrvController#initiateThreadExecutors", note: "ClientRequestExecutorThread_* 线程池初始化" }
+            ],
+            highlightNodes: ["register", "process-command", "client-processor"],
+            flowEdges: [{ from: "process-command", to: "client-processor", tone: "inbound" }],
+            detail: "该请求码不会落到 DefaultRequestProcessor，而是进入 client 专用线程池。",
+            delayMs: 1600
+          },
+          {
+            id: "dispatch-2b",
+            title: "可选分支：NameSrv 未就绪直接返回 not ready",
+            thread: "ClientRequestExecutorThread_*",
+            lane: "client",
+            methods: [
+              "ClientRequestProcessor#getRouteInfoByTopic",
+              "NamesrvConfig#isNeedWaitForService",
+              "NamesrvConfig#getWaitSecondsForService"
+            ],
+            anchors: [
+              { symbol: "ClientRequestProcessor#getRouteInfoByTopic", note: "needWaitForService=true 且未达到就绪时间时返回 SYSTEM_ERROR/not ready" },
+              { symbol: "NamesrvConfig#isNeedWaitForService/getWaitSecondsForService", note: "服务就绪门禁开关与等待秒数配置" }
+            ],
+            highlightNodes: ["client-processor", "not-ready"],
+            flowEdges: [{ from: "client-processor", to: "not-ready", tone: "warn" }],
+            detail: "该分支仅在 needWaitForService=true 时生效；默认 false，通常不会触发。",
+            delayMs: 1700
+          },
+          {
+            id: "dispatch-3",
+            title: "ClientRequestExecutorThread 执行路由查询并回写",
+            thread: "ClientRequestExecutorThread_*",
+            lane: "client",
+            methods: [
+              "ClientRequestProcessor#getRouteInfoByTopic",
+              "NettyRemotingAbstract#writeResponse"
+            ],
+            anchors: [
+              { symbol: "ClientRequestProcessor#getRouteInfoByTopic", note: "处理主题路由查询请求" },
+              { symbol: "NettyRemotingAbstract#writeResponse", note: "回写查询结果" }
+            ],
+            highlightNodes: ["client-processor", "client-response"],
+            flowEdges: [{ from: "client-processor", to: "client-response", tone: "outbound" }],
+            detail: "路由查询链路与默认请求链路在线程池层面完全隔离。",
+            delayMs: 1600
+          },
+          {
+            id: "dispatch-4",
+            title: "其他请求（如 REGISTER_BROKER）走默认处理器",
+            thread: "NettyServerCodecThread_* → RemotingExecutorThread_*",
+            lane: "default",
+            methods: [
+              "NettyRemotingAbstract#processRequestCommand (fallback default pair)",
+              "RemotingServer#registerDefaultProcessor"
+            ],
+            anchors: [
+              { symbol: "NamesrvController#registerProcessor", note: "defaultProcessorPair 绑定 DefaultRequestProcessor" },
+              { symbol: "NettyRemotingAbstract#processRequestCommand", note: "matched == null 时走默认处理器" }
+            ],
+            highlightNodes: ["process-command", "default-processor"],
+            flowEdges: [{ from: "process-command", to: "default-processor", tone: "inbound" }],
+            detail: "默认处理器覆盖 NameSrv 大多数运维与 broker 注册类请求。",
+            delayMs: 1600
+          },
+          {
+            id: "dispatch-5",
+            title: "RemotingExecutorThread 执行业务并响应",
+            thread: "RemotingExecutorThread_*",
+            lane: "default",
+            methods: [
+              "DefaultRequestProcessor#processRequest",
+              "DefaultRequestProcessor#registerBroker (示例)",
+              "NettyRemotingAbstract#writeResponse"
+            ],
+            anchors: [
+              { symbol: "DefaultRequestProcessor#processRequest", note: "按 RequestCode 分派具体逻辑" },
+              { symbol: "DefaultRequestProcessor#registerBroker", note: "注册 broker 路径" },
+              { symbol: "NettyRemotingAbstract#writeResponse", note: "默认请求响应回写" }
+            ],
+            highlightNodes: ["default-processor", "default-response"],
+            flowEdges: [{ from: "default-processor", to: "default-response", tone: "outbound" }],
+            detail: "至此可清晰区分两条执行路径：ClientRequestExecutor 与 RemotingExecutor。",
+            delayMs: 1700
+          },
+          {
+            id: "dispatch-6",
+            title: "可选分支：流控触发 SYSTEM_BUSY",
+            thread: "NettyServerCodecThread_*",
+            lane: "codec",
+            methods: [
+              "NettyRemotingAbstract#processRequestCommand",
+              "NettyRequestProcessor#rejectRequest",
+              "ExecutorService#submit(RequestTask)"
+            ],
+            anchors: [
+              { symbol: "NettyRemotingAbstract#processRequestCommand", note: "rejectRequest=true 或线程池 RejectedExecutionException 时返回 SYSTEM_BUSY" },
+              { symbol: "DefaultRequestProcessor#rejectRequest", note: "默认处理器返回 false；该分支更多由自定义处理器或线程池拥塞触发" }
+            ],
+            highlightNodes: ["process-command", "system-busy"],
+            flowEdges: [{ from: "process-command", to: "system-busy", tone: "warn" }],
+            detail: "SYSTEM_BUSY 是 NameSrv 保护性回压响应，不代表进程不可用。",
+            delayMs: 1700
+          }
+        ]
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "连接回收子分支",
+        badge: "场景：子分支 B（idle/close/exception 回收链路）",
+        steps: [
+          {
+            id: "cleanup-1",
+            title: "连接异常/空闲/关闭触发事件入队",
+            thread: "NettyServerCodecThread_*",
+            lane: "event",
+            methods: [
+              "NettyConnectManageHandler#channelInactive",
+              "NettyConnectManageHandler#userEventTriggered",
+              "NettyConnectManageHandler#exceptionCaught",
+              "NettyRemotingAbstract#putNettyEvent"
+            ],
+            anchors: [
+              { symbol: "NettyRemotingServer.NettyConnectManageHandler#channelInactive/userEventTriggered/exceptionCaught", note: "产生 CLOSE/IDLE/EXCEPTION 事件" },
+              { symbol: "NettyRemotingAbstract#putNettyEvent", note: "入 NettyEventExecutor 队列" }
+            ],
+            highlightNodes: ["connect-manage", "event-queue"],
+            flowEdges: [{ from: "connect-manage", to: "event-queue", tone: "event" }],
+            detail: "注意：该分支与 CONNECT/ACTIVE 不同，后者不会触发路由清理。",
+            delayMs: 1600
+          },
+          {
+            id: "cleanup-1b",
+            title: "高压分支：事件队列超过上限时直接丢弃",
+            thread: "NettyServerCodecThread_*",
+            lane: "event",
+            methods: [
+              "NettyRemotingAbstract#putNettyEvent",
+              "NettyRemotingAbstract.NettyEventExecutor#putNettyEvent"
+            ],
+            anchors: [
+              { symbol: "NettyRemotingAbstract.NettyEventExecutor#putNettyEvent", note: "eventQueue 超过 10000 时 drop event 并告警" }
+            ],
+            highlightNodes: ["event-queue", "event-drop"],
+            flowEdges: [{ from: "event-queue", to: "event-drop", tone: "warn" }],
+            detail: "该分支下事件不会进入 listener 回调链，属于过载保护行为。",
+            delayMs: 1700
+          },
+          {
+            id: "cleanup-2",
+            title: "NettyEventExecutor 消费事件并回调 Housekeeping",
+            thread: "NettyEventExecutor",
+            lane: "event",
+            methods: [
+              "NettyRemotingAbstract.NettyEventExecutor#run",
+              "BrokerHousekeepingService#onChannelClose/onChannelIdle/onChannelException"
+            ],
+            anchors: [
+              { symbol: "NettyRemotingAbstract.NettyEventExecutor#run", note: "轮询事件并分发到 ChannelEventListener" },
+              { symbol: "BrokerHousekeepingService#onChannelClose/onChannelIdle/onChannelException", note: "三类事件都调用 RouteInfoManager.onChannelDestroy" }
+            ],
+            highlightNodes: ["event-queue", "event-executor", "housekeeping"],
+            flowEdges: [
+              { from: "event-queue", to: "event-executor", tone: "event" },
+              { from: "event-executor", to: "housekeeping", tone: "event" }
+            ],
+            detail: "连接事件由独立线程串行消费，避免在 I/O 线程直接执行重清理逻辑。",
+            delayMs: 1700
+          },
+          {
+            id: "cleanup-3",
+            title: "RouteInfoManager.onChannelDestroy 组装并提交反注册请求",
+            thread: "NettyEventExecutor",
+            lane: "batch",
+            methods: [
+              "RouteInfoManager#onChannelDestroy(Channel)",
+              "RouteInfoManager#submitUnRegisterBrokerRequest"
+            ],
+            anchors: [
+              { symbol: "RouteInfoManager#onChannelDestroy(Channel)", note: "根据 channel 查找 broker 并构建 UnRegisterBrokerRequestHeader" },
+              { symbol: "RouteInfoManager#submitUnRegisterBrokerRequest", note: "请求入 BatchUnregistrationService 队列" }
+            ],
+            highlightNodes: ["housekeeping", "route-destroy", "unreg-queue"],
+            flowEdges: [
+              { from: "housekeeping", to: "route-destroy", tone: "event" },
+              { from: "route-destroy", to: "unreg-queue", tone: "event" }
+            ],
+            detail: "这里仅提交队列，不直接做全量路由清理。",
+            delayMs: 1700
+          },
+          {
+            id: "cleanup-3b",
+            title: "异常分支：反注册请求入队失败",
+            thread: "NettyEventExecutor / NSScanScheduledThread",
+            lane: "batch",
+            methods: [
+              "RouteInfoManager#submitUnRegisterBrokerRequest",
+              "BatchUnregistrationService#submit"
+            ],
+            anchors: [
+              { symbol: "RouteInfoManager#submitUnRegisterBrokerRequest", note: "返回 false 表示未成功提交到批量反注册队列" },
+              { symbol: "BatchUnregistrationService#submit", note: "底层 queue.offer(...) 失败则直接返回 false" }
+            ],
+            highlightNodes: ["route-destroy", "unreg-offer-fail"],
+            flowEdges: [{ from: "route-destroy", to: "unreg-offer-fail", tone: "warn" }],
+            detail: "该分支本次不会进入 BatchUnregistrationService.run，需要等待新的 onChannelDestroy/scan 触发再次提交。",
+            delayMs: 1700
+          },
+          {
+            id: "cleanup-4",
+            title: "BatchUnregistrationService 批量提取并执行",
+            thread: "BatchUnregistrationService",
+            lane: "batch",
+            methods: [
+              "BatchUnregistrationService#run",
+              "BatchUnregistrationService#submit"
+            ],
+            anchors: [
+              { symbol: "BatchUnregistrationService#submit", note: "LinkedBlockingQueue#offer" },
+              { symbol: "BatchUnregistrationService#run", note: "take + drainTo 聚合后调用 routeInfoManager.unRegisterBroker" }
+            ],
+            highlightNodes: ["unreg-queue", "batch-unreg"],
+            flowEdges: [{ from: "unreg-queue", to: "batch-unreg", tone: "warn" }],
+            detail: "批量反注册可降低 broker 批量下线时的清理开销。",
+            delayMs: 1700
+          },
+          {
+            id: "cleanup-5",
+            title: "unRegisterBroker 清理 brokerLive/topicQueue 等路由状态",
+            thread: "BatchUnregistrationService",
+            lane: "batch",
+            methods: [
+              "RouteInfoManager#unRegisterBroker",
+              "RouteInfoManager#cleanTopicByUnRegisterRequests"
+            ],
+            anchors: [
+              { symbol: "RouteInfoManager#unRegisterBroker", note: "移除 brokerLive/filterServer/brokerAddr/clusterAddr，并处理通知" },
+              { symbol: "RouteInfoManager#cleanTopicByUnRegisterRequests", note: "按 removed/reduced broker 清理 topicQueueTable" }
+            ],
+            highlightNodes: ["batch-unreg", "unregister-broker"],
+            flowEdges: [{ from: "batch-unreg", to: "unregister-broker", tone: "warn" }],
+            detail: "真正的路由表变更发生在这一阶段。",
+            delayMs: 1700
+          },
+          {
+            id: "cleanup-6",
+            title: "定时扫描路径：scanNotActiveBroker 也会进入同一回收链",
+            thread: "NSScanScheduledThread",
+            lane: "main",
+            methods: [
+              "NamesrvController#startScheduleService",
+              "RouteInfoManager#scanNotActiveBroker",
+              "RouteInfoManager#onChannelDestroy(BrokerAddrInfo)"
+            ],
+            anchors: [
+              { symbol: "NamesrvController#startScheduleService", note: "NSScanScheduledThread 周期调用 scanNotActiveBroker" },
+              { symbol: "RouteInfoManager#scanNotActiveBroker", note: "超时则 closeChannel 并触发 onChannelDestroy" },
+              { symbol: "RouteInfoManager#onChannelDestroy(BrokerAddrInfo)", note: "提交反注册请求，与事件回收路径汇合" }
+            ],
+            highlightNodes: ["scan-broker", "route-destroy", "unreg-queue"],
+            flowEdges: [
+              { from: "scan-broker", to: "route-destroy", tone: "warn" },
+              { from: "route-destroy", to: "unreg-queue", tone: "warn" }
+            ],
+            detail: "这是另一条触发入口：不依赖 Netty 事件，也能驱动相同的反注册处理链路。",
+            delayMs: 1800
+          }
+        ]
+      }
+    };
+
+    const staticEdges = [
+      { from: "startup", to: "controller", tone: "inbound" },
+      { from: "controller", to: "register", tone: "inbound" },
+      { from: "register", to: "bind", tone: "inbound" },
+      { from: "register", to: "services-start", tone: "inbound" },
+      { from: "bind", to: "services-start", tone: "inbound" },
+      { from: "bind", to: "accept", tone: "inbound" },
+      { from: "accept", to: "child-register", tone: "inbound" },
+      { from: "child-register", to: "pipeline-init", tone: "inbound" },
+      { from: "pipeline-init", to: "decoder", tone: "inbound" },
+      { from: "decoder", to: "connect-manage", tone: "inbound" },
+      { from: "connect-manage", to: "server-handler", tone: "inbound" },
+      { from: "server-handler", to: "process-command", tone: "inbound" },
+      { from: "process-command", to: "client-processor", tone: "inbound" },
+      { from: "client-processor", to: "not-ready", tone: "warn" },
+      { from: "client-processor", to: "client-response", tone: "outbound" },
+      { from: "process-command", to: "default-processor", tone: "inbound" },
+      { from: "process-command", to: "system-busy", tone: "warn" },
+      { from: "default-processor", to: "default-response", tone: "outbound" },
+      { from: "connect-manage", to: "event-queue", tone: "event" },
+      { from: "event-queue", to: "event-drop", tone: "warn" },
+      { from: "event-queue", to: "event-executor", tone: "event" },
+      { from: "event-executor", to: "housekeeping", tone: "event" },
+      { from: "housekeeping", to: "route-destroy", tone: "event" },
+      { from: "route-destroy", to: "unreg-offer-fail", tone: "warn" },
+      { from: "route-destroy", to: "unreg-queue", tone: "warn" },
+      { from: "unreg-queue", to: "batch-unreg", tone: "warn" },
+      { from: "batch-unreg", to: "unregister-broker", tone: "warn" },
+      { from: "scan-broker", to: "route-destroy", tone: "warn" }
+    ];
+
+    const state = {
+      scenario: "main",
+      currentIndex: -1,
+      running: false,
+      playToken: 0,
+      logs: []
+    };
+
+    const els = {
+      scenarioRow: document.getElementById("scenarioRow"),
+      scenarioBadge: document.getElementById("scenarioBadge"),
+      statusScenario: document.getElementById("statusScenario"),
+      statusStep: document.getElementById("statusStep"),
+      statusThread: document.getElementById("statusThread"),
+      statusIndex: document.getElementById("statusIndex"),
+      runDot: document.getElementById("runDot"),
+      runText: document.getElementById("runText"),
+      btnPlay: document.getElementById("btnPlay"),
+      btnPause: document.getElementById("btnPause"),
+      btnPrev: document.getElementById("btnPrev"),
+      btnNext: document.getElementById("btnNext"),
+      btnReset: document.getElementById("btnReset"),
+      stepRange: document.getElementById("stepRange"),
+      progressText: document.getElementById("progressText"),
+      progressPercent: document.getElementById("progressPercent"),
+      flowSteps: document.getElementById("flowSteps"),
+      logList: document.getElementById("logList"),
+      methodList: document.getElementById("methodList"),
+      sourceAnchorList: document.getElementById("sourceAnchorList"),
+      stepDetail: document.getElementById("stepDetail"),
+      stageCanvas: document.getElementById("stageCanvas"),
+      flowLines: document.getElementById("flowLines")
+    };
+
+    const laneMap = new Map(Array.from(document.querySelectorAll(".lane")).map((el) => [el.dataset.lane, el]));
+    const nodeMap = new Map(Array.from(document.querySelectorAll(".node")).map((el) => [el.dataset.node, el]));
+
+    const svgNS = "http://www.w3.org/2000/svg";
+    const staticGroup = document.createElementNS(svgNS, "g");
+    const dynamicGroup = document.createElementNS(svgNS, "g");
+    els.flowLines.appendChild(staticGroup);
+    els.flowLines.appendChild(dynamicGroup);
+
+    function getCurrentScenario() {
+      return scenarios[state.scenario];
+    }
+
+    function currentSteps() {
+      return getCurrentScenario().steps;
+    }
+
+    function fmtProgress(current, total) {
+      if (total <= 0) {
+        return "0 / 0";
+      }
+      return `${Math.max(0, current + 1)} / ${total}`;
+    }
+
+    function updateRunStateUI() {
+      els.runDot.classList.toggle("running", state.running);
+      els.runText.textContent = `状态：${state.running ? "播放中" : "已暂停"}`;
+    }
+
+    function setScenarioButtons() {
+      const buttons = els.scenarioRow.querySelectorAll("button[data-scenario]");
+      buttons.forEach((btn) => {
+        const active = btn.dataset.scenario === state.scenario;
+        btn.classList.toggle("active", active);
+        btn.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    }
+
+    function clearHighlights() {
+      nodeMap.forEach((node) => node.classList.remove("active"));
+      laneMap.forEach((lane) => lane.classList.remove("active"));
+      dynamicGroup.innerHTML = "";
+    }
+
+    function getNodeCenter(nodeId) {
+      const node = nodeMap.get(nodeId);
+      if (!node) {
+        return null;
+      }
+      const canvasRect = els.stageCanvas.getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
+      return {
+        x: rect.left - canvasRect.left + rect.width / 2,
+        y: rect.top - canvasRect.top + rect.height / 2
+      };
+    }
+
+    function makeCurve(from, to) {
+      const dx = Math.max(30, Math.abs(to.x - from.x) * 0.34);
+      const c1x = from.x + dx;
+      const c1y = from.y;
+      const c2x = to.x - dx;
+      const c2y = to.y;
+      return `M ${from.x} ${from.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${to.x} ${to.y}`;
+    }
+
+    function drawEdge(group, edge, dynamic = false) {
+      const from = getNodeCenter(edge.from);
+      const to = getNodeCenter(edge.to);
+      if (!from || !to) {
+        return;
+      }
+      const path = document.createElementNS(svgNS, "path");
+      path.setAttribute("d", makeCurve(from, to));
+      path.classList.add("edge", edge.tone || "inbound");
+      if (dynamic) {
+        path.classList.add("dynamic");
+      }
+      group.appendChild(path);
+    }
+
+    function normalizeNodeThreeLines() {
+      nodeMap.forEach((node) => {
+        const titleEl = node.querySelector(".title");
+        const threadEl = node.querySelector(".thread-tag");
+        if (!titleEl || !threadEl) {
+          return;
+        }
+        if (node.querySelector(".desc")) {
+          return;
+        }
+
+        const descParts = [];
+        let cursor = titleEl.nextSibling;
+        while (cursor && cursor !== threadEl) {
+          const next = cursor.nextSibling;
+          if (cursor.nodeType === Node.TEXT_NODE) {
+            const t = cursor.textContent.replace(/\s+/g, " ").trim();
+            if (t) {
+              descParts.push(t);
+            }
+          } else if (cursor.nodeType === Node.ELEMENT_NODE) {
+            const t = cursor.textContent.replace(/\s+/g, " ").trim();
+            if (t) {
+              descParts.push(t);
+            }
+          }
+          node.removeChild(cursor);
+          cursor = next;
+        }
+
+        const descEl = document.createElement("div");
+        descEl.className = "desc";
+        descEl.textContent = descParts.join(" ") || "-";
+        node.insertBefore(descEl, threadEl);
+      });
+    }
+
+    function redrawStaticEdges() {
+      const canvasRect = els.stageCanvas.getBoundingClientRect();
+      els.flowLines.setAttribute("width", String(Math.max(1, canvasRect.width)));
+      els.flowLines.setAttribute("height", String(Math.max(1, canvasRect.height)));
+      staticGroup.innerHTML = "";
+      staticEdges.forEach((edge) => drawEdge(staticGroup, edge, false));
+    }
+
+    function renderMethods(step) {
+      els.methodList.innerHTML = "";
+      if (!step) {
+        const li = document.createElement("li");
+        li.textContent = "未选择步骤";
+        els.methodList.appendChild(li);
+        return;
+      }
+      step.methods.forEach((method) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<code>${escapeHtml(method)}</code>`;
+        els.methodList.appendChild(li);
+      });
+    }
+
+    function renderAnchors(step) {
+      els.sourceAnchorList.innerHTML = "";
+      if (!step) {
+        const li = document.createElement("li");
+        li.textContent = "未选择步骤";
+        els.sourceAnchorList.appendChild(li);
+        return;
+      }
+      step.anchors.forEach((anchor) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<div><code>${escapeHtml(anchor.symbol)}</code></div><div>${escapeHtml(anchor.note)}</div>`;
+        els.sourceAnchorList.appendChild(li);
+      });
+    }
+
+    function renderStepCards() {
+      const steps = currentSteps();
+      els.flowSteps.innerHTML = "";
+      steps.forEach((step, index) => {
+        const card = document.createElement("button");
+        card.className = "flow-step";
+        if (index === state.currentIndex) {
+          card.classList.add("active");
+        }
+        card.setAttribute("type", "button");
+        card.innerHTML = `<div class="idx">#${index + 1}</div><div>${escapeHtml(step.title)}</div><div class="hint">线程：${escapeHtml(step.thread)}</div>`;
+        card.addEventListener("click", () => {
+          pausePlayback();
+          applyStep(index, true);
+        });
+        els.flowSteps.appendChild(card);
+      });
+    }
+
+    function renderLogs() {
+      els.logList.innerHTML = "";
+      if (!state.logs.length) {
+        const item = document.createElement("div");
+        item.className = "log-item";
+        item.textContent = "日志为空，点击播放或手动执行步骤后会记录轨迹。";
+        els.logList.appendChild(item);
+        return;
+      }
+      state.logs.forEach((line) => {
+        const item = document.createElement("div");
+        item.className = "log-item";
+        item.innerHTML = `<div class="meta">${escapeHtml(line.meta)}</div><div>${escapeHtml(line.text)}</div>`;
+        els.logList.appendChild(item);
+      });
+      els.logList.scrollTop = els.logList.scrollHeight;
+    }
+
+    function pushLog(step, index) {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mm = String(now.getMinutes()).padStart(2, "0");
+      const ss = String(now.getSeconds()).padStart(2, "0");
+      const scenarioName = getCurrentScenario().title;
+      state.logs.push({
+        meta: `${hh}:${mm}:${ss} | ${scenarioName} | #${index + 1}`,
+        text: `${step.title} [${step.thread}]`
+      });
+      if (state.logs.length > 120) {
+        state.logs = state.logs.slice(state.logs.length - 120);
+      }
+      renderLogs();
+    }
+
+    function updateProgress() {
+      const total = currentSteps().length;
+      const current = state.currentIndex;
+      els.statusIndex.textContent = `进度: ${fmtProgress(current, total)}`;
+      els.progressText.textContent = fmtProgress(current, total);
+      const percent = total <= 0 ? 0 : Math.round(((Math.max(0, current + 1)) / total) * 100);
+      els.progressPercent.textContent = `${percent}%`;
+      els.stepRange.max = String(Math.max(0, total - 1));
+      els.stepRange.value = String(Math.max(0, current));
+    }
+
+    function applyStep(index, logIt) {
+      const steps = currentSteps();
+      if (!steps.length) {
+        return;
+      }
+      if (index < 0) {
+        state.currentIndex = -1;
+        clearHighlights();
+        els.statusStep.textContent = "当前步骤: -";
+        els.statusThread.textContent = "线程: -";
+        els.stepDetail.textContent = "选择步骤后显示详细说明。";
+        renderMethods(null);
+        renderAnchors(null);
+        renderStepCards();
+        updateProgress();
+        return;
+      }
+
+      state.currentIndex = Math.min(index, steps.length - 1);
+      const step = steps[state.currentIndex];
+
+      clearHighlights();
+      if (laneMap.has(step.lane)) {
+        laneMap.get(step.lane).classList.add("active");
+      }
+      step.highlightNodes.forEach((id) => {
+        if (nodeMap.has(id)) {
+          nodeMap.get(id).classList.add("active");
+        }
+      });
+      step.flowEdges.forEach((edge) => drawEdge(dynamicGroup, edge, true));
+
+      els.statusStep.textContent = `当前步骤: ${step.title}`;
+      els.statusThread.textContent = `线程: ${step.thread}`;
+      els.stepDetail.textContent = step.detail;
+
+      renderMethods(step);
+      renderAnchors(step);
+      renderStepCards();
+      updateProgress();
+
+      if (logIt) {
+        pushLog(step, state.currentIndex);
+      }
+    }
+
+    async function playFromCurrent() {
+      if (state.running) {
+        return;
+      }
+      state.running = true;
+      updateRunStateUI();
+      const token = ++state.playToken;
+      const steps = currentSteps();
+      let start = state.currentIndex + 1;
+      if (start >= steps.length) {
+        start = 0;
+      }
+      for (let i = start; i < steps.length; i += 1) {
+        if (!state.running || token !== state.playToken) {
+          break;
+        }
+        applyStep(i, true);
+        const baseDelay = Number.isFinite(steps[i].delayMs) ? steps[i].delayMs : 1300;
+        const delay = Math.max(200, Math.round(baseDelay));
+        await sleep(delay);
+      }
+      if (token === state.playToken) {
+        state.running = false;
+        updateRunStateUI();
+      }
+    }
+
+    function pausePlayback() {
+      if (!state.running) {
+        return;
+      }
+      state.running = false;
+      state.playToken += 1;
+      updateRunStateUI();
+    }
+
+    function switchScenario(id) {
+      if (!scenarios[id]) {
+        return;
+      }
+      pausePlayback();
+      state.scenario = id;
+      state.currentIndex = -1;
+      state.logs = [];
+
+      setScenarioButtons();
+      const stepsCount = scenarios[id].steps.length;
+      els.scenarioBadge.textContent = `${scenarios[id].badge} | 步骤 ${stepsCount}`;
+      els.statusScenario.textContent = `场景: ${scenarios[id].title}`;
+
+      renderStepCards();
+      renderLogs();
+      applyStep(-1, false);
+      redrawStaticEdges();
+    }
+
+    function nextStep() {
+      pausePlayback();
+      const steps = currentSteps();
+      if (!steps.length) {
+        return;
+      }
+      const next = Math.min(state.currentIndex + 1, steps.length - 1);
+      applyStep(next, true);
+    }
+
+    function prevStep() {
+      pausePlayback();
+      if (state.currentIndex <= 0) {
+        applyStep(0, true);
+        return;
+      }
+      applyStep(state.currentIndex - 1, true);
+    }
+
+    function resetScene() {
+      pausePlayback();
+      state.logs = [];
+      renderLogs();
+      applyStep(-1, false);
+    }
+
+    function bindEvents() {
+      els.scenarioRow.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-scenario]");
+        if (!btn) {
+          return;
+        }
+        switchScenario(btn.dataset.scenario);
+      });
+
+      els.btnPlay.addEventListener("click", () => {
+        playFromCurrent();
+      });
+      els.btnPause.addEventListener("click", () => {
+        pausePlayback();
+      });
+      els.btnNext.addEventListener("click", () => {
+        nextStep();
+      });
+      els.btnPrev.addEventListener("click", () => {
+        prevStep();
+      });
+      els.btnReset.addEventListener("click", () => {
+        resetScene();
+      });
+
+      els.stepRange.addEventListener("input", () => {
+        pausePlayback();
+        const value = Number(els.stepRange.value);
+        if (Number.isFinite(value)) {
+          applyStep(value, true);
+        }
+      });
+
+      window.addEventListener("keydown", (event) => {
+        const tag = (event.target && event.target.tagName) || "";
+        if (tag === "INPUT" || tag === "TEXTAREA") {
+          return;
+        }
+        if (event.code === "Space") {
+          event.preventDefault();
+          if (state.running) {
+            pausePlayback();
+          } else {
+            playFromCurrent();
+          }
+          return;
+        }
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          nextStep();
+          return;
+        }
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          prevStep();
+          return;
+        }
+        if (event.key.toLowerCase() === "r") {
+          event.preventDefault();
+          resetScene();
+          return;
+        }
+        if (event.key === "1") {
+          switchScenario("main");
+          return;
+        }
+        if (event.key === "2") {
+          switchScenario("dispatch");
+          return;
+        }
+        if (event.key === "3") {
+          switchScenario("cleanup");
+          return;
+        }
+      });
+
+      window.addEventListener("resize", () => {
+        redrawStaticEdges();
+        if (state.currentIndex >= 0) {
+          const step = currentSteps()[state.currentIndex];
+          dynamicGroup.innerHTML = "";
+          step.flowEdges.forEach((edge) => drawEdge(dynamicGroup, edge, true));
+        }
+      });
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+      });
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function init() {
+      normalizeNodeThreeLines();
+      bindEvents();
+      switchScenario("main");
+      updateRunStateUI();
+      requestAnimationFrame(() => {
+        redrawStaticEdges();
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
