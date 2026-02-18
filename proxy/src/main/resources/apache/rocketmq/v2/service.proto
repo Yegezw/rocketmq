@@ -1,0 +1,532 @@
+// Licensed to the Apache Software Foundation (ASF) under one or more
+// contributor license agreements.  See the NOTICE file distributed with
+// this work for additional information regarding copyright ownership.
+// The ASF licenses this file to You under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance with
+// the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+import "apache/rocketmq/v2/definition.proto";
+
+package apache.rocketmq.v2;
+
+option csharp_namespace = "Apache.Rocketmq.V2";
+option java_multiple_files = true;
+option java_package = "apache.rocketmq.v2";
+option java_generate_equals_and_hash = true;
+option java_string_check_utf8 = true;
+option java_outer_classname = "MQService";
+
+// 主题是消息发布与订阅的目标资源, 类似域名, 通过接入点解析后可寻址.
+//
+// 接入点通常是 NameServer 地址, 提供服务发现, 负载均衡等能力.
+// NameServer 定期接收 Broker 心跳, 并移除失活 Broker.
+//
+// NameServer 处理 QueryRouteRequest 请求, 返回可直接收发消息的队列路由.
+//
+// QueryRouteRequest 需要包含来源端点, 即配置的 access point, 其中可携带
+// tenant-id, instance-id 等厂商定制信息.
+// NameServer 可基于这些信息返回定制化路由结果.
+// 查询路由请求定义
+message QueryRouteRequest {
+  // 主题资源
+  Resource topic = 1;
+  // 网络端点信息
+  Endpoints endpoints = 2;
+}
+
+// 查询路由响应定义
+message QueryRouteResponse {
+  // 状态
+  Status status = 1;
+
+  // 消息队列列表
+  repeated MessageQueue message_queues = 2;
+}
+
+// 发送消息请求定义
+message SendMessageRequest {
+  // 消息列表
+  repeated Message messages = 1;
+}
+
+// 发送结果条目定义
+message SendResultEntry {
+  // 状态
+  Status status = 1;
+  // 消息 ID
+  string message_id = 2;
+  // 事务 ID
+  string transaction_id = 3;
+  // 位点偏移量
+  int64 offset = 4;
+  // 用于标识可撤回消息的唯一句柄, 当前仅延迟消息支持撤回.
+  string recall_handle = 5;
+}
+
+// 发送消息响应定义
+message SendMessageResponse {
+  // 状态
+  Status status = 1;
+
+  // 某些实现可能出现部分失败, 客户端 SDK 需逐条检查 entries.
+  repeated SendResultEntry entries = 2;
+}
+
+// 查询分配请求定义
+message QueryAssignmentRequest {
+  // 主题资源
+  Resource topic = 1;
+  // 消费组资源
+  Resource group = 2;
+  // 网络端点信息
+  Endpoints endpoints = 3;
+}
+
+// 查询分配响应定义
+message QueryAssignmentResponse {
+  // 状态
+  Status status = 1;
+  // 分配结果列表
+  repeated Assignment assignments = 2;
+}
+
+// 接收消息请求定义
+message ReceiveMessageRequest {
+  // 消费组资源
+  Resource group = 1;
+  // 消息队列
+  MessageQueue message_queue = 2;
+  // 过滤表达式
+  FilterExpression filter_expression = 3;
+  // 批量消息数量
+  int32 batch_size = 4;
+  // 如果客户端类型是简单消费者, 则为必需.
+  optional google.protobuf.Duration invisible_duration = 5;
+  // 用于消息自动更新和清理
+  bool auto_renew = 6;
+  // 长轮询超时时间
+  optional google.protobuf.Duration long_polling_timeout = 7;
+  // 拉取尝试标识
+  optional string attempt_id = 8;
+}
+
+// 接收消息响应定义
+message ReceiveMessageResponse {
+  oneof content {
+    // 状态
+    Status status = 1;
+    // 消息对象
+    Message message = 2;
+    // Broker 开始传递状态行或消息的时间戳.
+    google.protobuf.Timestamp delivery_timestamp = 3;
+  }
+}
+
+// 消息确认条目定义
+message AckMessageEntry {
+  // 消息 ID
+  string message_id = 1;
+  // 消息回执句柄
+  string receipt_handle = 2;
+}
+
+// 消息确认请求定义
+message AckMessageRequest {
+  // 消费组资源
+  Resource group = 1;
+  // 主题资源
+  Resource topic = 2;
+  // 结果条目列表
+  repeated AckMessageEntry entries = 3;
+}
+
+// 消息确认结果条目定义
+message AckMessageResultEntry {
+  // 消息 ID
+  string message_id = 1;
+  // 消息回执句柄
+  string receipt_handle = 2;
+
+  // 可通过 `status.code` 判断确认结果, 若确认失败
+  // `status.message` 给出失败原因.
+  Status status = 3;
+}
+
+// 消息确认响应定义
+message AckMessageResponse {
+
+  // RPC层状态, 用于表示RPC级别的错误, 包括
+  // 身份验证, 授权, 限制和其他一般故障.
+  Status status = 1;
+
+  // 结果条目列表
+  repeated AckMessageResultEntry entries = 2;
+}
+
+// 转发死信请求定义
+message ForwardMessageToDeadLetterQueueRequest {
+  // 消费组资源
+  Resource group = 1;
+  // 主题资源
+  Resource topic = 2;
+  // 消息回执句柄
+  string receipt_handle = 3;
+  // 消息 ID
+  string message_id = 4;
+  // 消息投递尝试次数
+  int32 delivery_attempt = 5;
+  // 最大投递尝试次数
+  int32 max_delivery_attempts = 6;
+}
+
+// 转发死信响应定义
+message ForwardMessageToDeadLetterQueueResponse {
+  // 状态
+  Status status = 1;
+}
+
+// 心跳请求定义
+message HeartbeatRequest {
+  // 消费组资源
+  optional Resource group = 1;
+  // 客户端类型
+  ClientType client_type = 2;
+}
+
+// 心跳响应定义
+message HeartbeatResponse {
+  // 状态
+  Status status = 1;
+}
+
+// 结束事务请求定义
+message EndTransactionRequest {
+  // 主题资源
+  Resource topic = 1;
+  // 消息 ID
+  string message_id = 2;
+  // 事务 ID
+  string transaction_id = 3;
+  // 事务处理决议
+  TransactionResolution resolution = 4;
+  // 事务决议来源
+  TransactionSource source = 5;
+  // 链路追踪上下文
+  string trace_context = 6;
+}
+
+// 结束事务响应定义
+message EndTransactionResponse {
+  // 状态
+  Status status = 1;
+}
+
+// 打印线程栈命令定义
+message PrintThreadStackTraceCommand {
+  // 一次性随机标识
+  string nonce = 1;
+}
+
+// 线程栈结果定义
+message ThreadStackTrace {
+  // 一次性随机标识
+  string nonce = 1;
+  // 线程栈内容
+  optional string thread_stack_trace = 2;
+}
+
+// 消息校验命令定义
+message VerifyMessageCommand {
+  // 一次性随机标识
+  string nonce = 1;
+  // 消息对象
+  Message message = 2;
+}
+
+// 消息校验结果定义
+message VerifyMessageResult {
+  // 一次性随机标识
+  string nonce = 1;
+}
+
+// 恢复孤儿事务命令定义
+message RecoverOrphanedTransactionCommand {
+  // 消息对象
+  Message message = 1;
+  // 事务 ID
+  string transaction_id = 2;
+}
+
+// 遥测双向命令定义
+message TelemetryCommand {
+  // 状态
+  optional Status status = 1;
+
+  oneof command {
+    // 客户端设置
+    Settings settings = 2;
+
+    // 以下命令来自客户端.
+    //
+    // 向服务端上报线程栈.
+    ThreadStackTrace thread_stack_trace = 3;
+
+    // 向服务端上报消息校验结果.
+    VerifyMessageResult verify_message_result = 4;
+
+    // 以下命令来自服务端.
+    //
+    // 请求客户端恢复孤立的事务消息.
+    RecoverOrphanedTransactionCommand recover_orphaned_transaction_command = 5;
+
+    // 请求客户端打印线程栈.
+    PrintThreadStackTraceCommand print_thread_stack_trace_command = 6;
+
+    // 请求客户端验证指定消息的消费情况.
+    VerifyMessageCommand verify_message_command = 7;
+  }
+}
+
+// 客户端终止通知请求定义
+message NotifyClientTerminationRequest {
+  // 消费组, 生产者场景该字段为空.
+  optional Resource group = 1;
+}
+
+// 客户端终止通知响应定义
+message NotifyClientTerminationResponse {
+  // 状态
+  Status status = 1;
+}
+
+// 修改不可见时长请求定义
+message ChangeInvisibleDurationRequest {
+  // 消费组资源
+  Resource group = 1;
+  // 主题资源
+  Resource topic = 2;
+
+  // 用于标识待修改消息的唯一回执句柄
+  string receipt_handle = 3;
+
+  // 新的不可见时长
+  google.protobuf.Duration invisible_duration = 4;
+
+  // 用于消息追踪
+  string message_id = 5;
+}
+
+// 修改不可见时长响应定义
+message ChangeInvisibleDurationResponse {
+  // 状态
+  Status status = 1;
+
+  // 服务端可能为该消息生成新的回执句柄.
+  string receipt_handle = 2;
+}
+
+// 拉消息请求定义
+message PullMessageRequest {
+  // 消费组资源
+  Resource group = 1;
+  // 消息队列
+  MessageQueue message_queue = 2;
+  // 位点偏移量
+  int64 offset = 3;
+  // 批量消息数量
+  int32 batch_size = 4;
+  // 过滤表达式
+  FilterExpression filter_expression = 5;
+  // 长轮询超时时间
+  google.protobuf.Duration long_polling_timeout = 6;
+}
+
+// 拉消息响应定义
+message PullMessageResponse {
+  oneof content {
+    // 状态
+    Status status = 1;
+    // 消息对象
+    Message message = 2;
+    // 下一个消费位点
+    int64 next_offset = 3;
+  }
+}
+
+// 更新消费位点请求定义
+message UpdateOffsetRequest {
+  // 消费组资源
+  Resource group = 1;
+  // 消息队列
+  MessageQueue message_queue = 2;
+  // 位点偏移量
+  int64 offset = 3;
+}
+
+// 更新消费位点响应定义
+message UpdateOffsetResponse {
+  // 状态
+  Status status = 1;
+}
+
+// 查询消费位点请求定义
+message GetOffsetRequest {
+  // 消费组资源
+  Resource group = 1;
+  // 消息队列
+  MessageQueue message_queue = 2;
+}
+
+// 查询消费位点响应定义
+message GetOffsetResponse {
+  // 状态
+  Status status = 1;
+  // 位点偏移量
+  int64 offset = 2;
+}
+
+// 按策略查询位点请求定义
+message QueryOffsetRequest {
+  // 消息队列
+  MessageQueue message_queue = 1;
+  // 位点查询策略
+  QueryOffsetPolicy query_offset_policy = 2;
+  // 时间戳
+  optional google.protobuf.Timestamp timestamp = 3;
+}
+
+// 按策略查询位点响应定义
+message QueryOffsetResponse {
+  // 状态
+  Status status = 1;
+  // 位点偏移量
+  int64 offset = 2;
+}
+
+// 撤回消息请求定义
+message RecallMessageRequest {
+  // 主题资源
+  Resource topic = 1;
+  // 参考 SendResultEntry.
+  string recall_handle = 2;
+}
+
+// 撤回消息响应定义
+message RecallMessageResponse {
+  // 状态
+  Status status = 1;
+  // 消息 ID
+  string message_id = 2;
+}
+
+// MessagingService 全部 RPC 统一遵循以下错误处理策略:
+//
+// 若请求未携带有效鉴权凭据, 返回 `UNAUTHENTICATED`
+// 若鉴权通过但权限不足, 返回 `PERMISSION_DENIED`
+// 若基于用户资源的配额耗尽, 返回 `RESOURCE_EXHAUSTED`
+// 若服务端发生预期外错误, 返回 `INTERNAL`
+// 消息服务 RPC 定义
+service MessagingService {
+
+  // 按给定 endpoints 查询主题路由条目.
+  // 成功时返回可寻址消息队列集合, 服务端可基于 endpoints 返回定制路由.
+  //
+  // 若主题不存在返回 `NOT_FOUND`
+  // 若 endpoints 为空返回 `INVALID_ARGUMENT`
+  rpc QueryRoute(QueryRouteRequest) returns (QueryRouteResponse) {}
+
+  // 生产者或消费者定期上报 HeartbeatRequest 维持保活, 同时上报客户端配置
+  // 包括主题订阅, 负载均衡组等.
+  //
+  // 成功返回 `OK`
+  // 若客户端语言暂不支持返回 `INVALID_ARGUMENT`
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse) {}
+
+  // 向 Broker 投递消息.
+  // 客户端可进一步:
+  // 1. 指定消息队列以满足部分 FIFO 语义
+  // 2. 将消息标记为事务消息, 在提交前对消费者不可见
+  // 3. 指定定时投递时间点
+  // 4. 其他扩展能力
+  //
+  // 成功时返回状态 `OK` 的 message-id 或 transaction-id
+  // 若目标主题不存在返回 `NOT_FOUND`
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse) {}
+
+  // 查询当前消费者在指定主题上的分配结果, 由服务端负载均衡器决定.
+  //
+  // 若主题不存在返回 `NOT_FOUND`
+  // 若 endpoints 为空返回 `INVALID_ARGUMENT`
+  rpc QueryAssignment(QueryAssignmentRequest) returns (QueryAssignmentResponse) {
+  }
+
+  // 批量接收消息流, 成功时返回消息集合, 消息处理后需 ACK 或触发重投.
+  //
+  // 若并发接收请求超出消费组配额返回 `UNAVAILABLE`
+  // 若上游存储节点挂起需及时返回 `DEADLINE_EXCEEDED`
+  // 若主题或消费组不存在返回 `NOT_FOUND`
+  // 若无新消息返回 `OK` 且消息集为空, 客户端需注意可能出现假空结果
+  //
+  // 若远端拉取失败, 服务端必须仅返回一条 `ReceiveMessageResponse`
+  // 并在 `Status` 中给出失败原因
+  rpc ReceiveMessage(ReceiveMessageRequest) returns (stream ReceiveMessageResponse) {
+  }
+
+  // 按 `AckMessageRequest` 中的 `receipt_handle` 或 `offset` 确认消息处理成功.
+  // 服务端成功删除相关消息后返回 `OK`
+  //
+  // 若 receipt_handle 非法或过期返回 `INVALID_ARGUMENT`.
+  rpc AckMessage(AckMessageRequest) returns (AckMessageResponse) {}
+
+  // 当客户端侧消息投递次数超过上限时, 将消息转发到死信队列, 成功返回 `OK`.
+  rpc ForwardMessageToDeadLetterQueue(ForwardMessageToDeadLetterQueueRequest)
+      returns (ForwardMessageToDeadLetterQueueResponse) {}
+
+  // PullMessage 与 ReceiveMessage 均用于获取消息, 但语义不同.
+  rpc PullMessage(PullMessageRequest) returns (stream PullMessageResponse) {}
+
+  // 更新远端消费组在指定队列上的消费进度.
+  rpc UpdateOffset(UpdateOffsetRequest) returns (UpdateOffsetResponse) {}
+
+  // 查询远端消费组在指定队列上的消费进度.
+  rpc GetOffset(GetOffsetRequest) returns (GetOffsetResponse) {}
+
+  // 按查询策略获取指定队列位点.
+  rpc QueryOffset(QueryOffsetRequest) returns (QueryOffsetResponse) {}
+
+  // 提交或回滚一条事务消息.
+  rpc EndTransaction(EndTransactionRequest) returns (EndTransactionResponse) {}
+
+  // 客户端启动后会立即与 Broker 建立双向流 RPC, 并主动上报自身设置.
+  //
+  // 服务端需要检测客户端状态时会下发遥测指令, 客户端执行后通过流回报结果.
+  rpc Telemetry(stream TelemetryCommand) returns (stream TelemetryCommand) {}
+
+  // 通知服务端客户端已终止.
+  rpc NotifyClientTermination(NotifyClientTerminationRequest) returns (NotifyClientTerminationResponse) {
+  }
+
+  // 消息被某消费组获取后, 在一段时间内对同组其他客户端不可见.
+  // 若客户端无法在不可见期内完成处理, 可调用 ChangeInvisibleDuration 延长不可见时长.
+  rpc ChangeInvisibleDuration(ChangeInvisibleDurationRequest) returns (ChangeInvisibleDurationResponse) {
+  }
+
+  // 撤回消息.
+  // 延迟消息需在投递时间前撤回, 类似事务消息回滚
+  // 普通消息当前不支持撤回
+  rpc RecallMessage(RecallMessageRequest) returns (RecallMessageResponse) {
+  }
+}

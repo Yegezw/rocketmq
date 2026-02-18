@@ -39,15 +39,35 @@ import java.security.cert.CertificateException;
 
 /**
  * support remoting and http2 protocol at one port
+ * <br>
+ * 在同一端口同时支持 remoting 与 http2 协议
  */
 public class MultiProtocolRemotingServer extends NettyRemotingServer {
 
+    /**
+     * Proxy 日志记录器
+     */
     private final static Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * Netty 服务端配置
+     */
     private final NettyServerConfig nettyServerConfig;
 
+    /**
+     * remoting 协议处理器
+     */
     private final RemotingProtocolHandler remotingProtocolHandler;
+    /**
+     * http2 协议代理处理器
+     */
     protected Http2ProtocolProxyHandler http2ProtocolProxyHandler;
 
+    /**
+     * 构造多协议 remoting 服务端
+     *
+     * @param nettyServerConfig Netty 服务端配置
+     * @param channelEventListener 通道事件监听器
+     */
     public MultiProtocolRemotingServer(NettyServerConfig nettyServerConfig, ChannelEventListener channelEventListener) {
         super(nettyServerConfig, channelEventListener);
         this.nettyServerConfig = nettyServerConfig;
@@ -60,6 +80,9 @@ public class MultiProtocolRemotingServer extends NettyRemotingServer {
         this.http2ProtocolProxyHandler = new Http2ProtocolProxyHandler();
     }
 
+    /**
+     * 加载 TLS 上下文
+     */
     @Override
     public void loadSslContext() {
         TlsMode tlsMode = TlsSystemConfig.tlsMode;
@@ -75,6 +98,12 @@ public class MultiProtocolRemotingServer extends NettyRemotingServer {
         }
     }
 
+    /**
+     * 配置连接通道处理链
+     *
+     * @param ch Socket 通道
+     * @return 配置后的通道处理链
+     */
     @Override
     protected ChannelPipeline configChannel(SocketChannel ch) {
         return ch.pipeline()

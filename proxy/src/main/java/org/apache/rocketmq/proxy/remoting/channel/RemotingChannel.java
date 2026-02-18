@@ -58,15 +58,48 @@ import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResult
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerRunningInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
+/**
+ * Remoting 代理通道实现, 负责将代理请求透传到原始连接并处理回包
+ */
 public class RemotingChannel extends ProxyChannel implements RemoteChannelConverter, ChannelExtendAttributeGetter {
+    /**
+     * Proxy 模块日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * 默认客户端超时时间, 单位毫秒
+     */
     private static final long DEFAULT_MQ_CLIENT_TIMEOUT = Duration.ofSeconds(3).toMillis();
+    /**
+     * 客户端标识
+     */
     private final String clientId;
+    /**
+     * 远端地址
+     */
     private final String remoteAddress;
+    /**
+     * 本地地址
+     */
     private final String localAddress;
+    /**
+     * Remoting 外呼客户端
+     */
     private final RemotingProxyOutClient remotingProxyOutClient;
+    /**
+     * 订阅数据集合
+     */
     private final Set<SubscriptionData> subscriptionData;
 
+    /**
+     * 构造 Remoting 代理通道
+     *
+     * @param remotingProxyOutClient Remoting 外呼客户端
+     * @param proxyRelayService 代理转发服务
+     * @param parent 原始连接
+     * @param clientId 客户端标识
+     * @param subscriptionData 订阅数据集合
+     */
     public RemotingChannel(RemotingProxyOutClient remotingProxyOutClient, ProxyRelayService proxyRelayService,
         Channel parent,
         String clientId, Set<SubscriptionData> subscriptionData) {
@@ -95,27 +128,57 @@ public class RemotingChannel extends ProxyChannel implements RemoteChannelConver
         return this.parent().isWritable();
     }
 
+    /**
+     * 关闭原始连接
+     *
+     * @return 关闭 Future
+     */
     @Override
     public ChannelFuture close() {
         return this.parent().close();
     }
 
+    /**
+     * 获取原始连接配置
+     *
+     * @return 连接配置
+     */
     @Override
     public ChannelConfig config() {
         return this.parent().config();
     }
 
+    /**
+     * 获取原始连接元数据
+     *
+     * @return 连接元数据
+     */
     @Override
     public ChannelMetadata metadata() {
         return this.parent().metadata();
     }
 
+    /**
+     * 透传其他类型消息到原始连接
+     *
+     * @param msg 待发送消息
+     * @return 异步执行结果
+     */
     @Override
     protected CompletableFuture<Void> processOtherMessage(Object msg) {
         this.parent().writeAndFlush(msg);
         return CompletableFuture.completedFuture(null);
     }
 
+    /**
+     * 处理事务回查请求并透传到原始连接
+     *
+     * @param header 请求头
+     * @param messageExt 消息内容
+     * @param transactionData 事务数据
+     * @param responseFuture 响应 Future
+     * @return 异步执行结果
+     */
     @Override
     protected CompletableFuture<Void> processCheckTransaction(CheckTransactionStateRequestHeader header,
         MessageExt messageExt, TransactionData transactionData,
@@ -149,6 +212,14 @@ public class RemotingChannel extends ProxyChannel implements RemoteChannelConver
         return writeFuture;
     }
 
+    /**
+     * 处理获取消费者运行信息请求
+     *
+     * @param command 原始命令
+     * @param header 请求头
+     * @param responseFuture 响应 Future
+     * @return 异步执行结果
+     */
     @Override
     protected CompletableFuture<Void> processGetConsumerRunningInfo(RemotingCommand command,
         GetConsumerRunningInfoRequestHeader header,
@@ -177,6 +248,15 @@ public class RemotingChannel extends ProxyChannel implements RemoteChannelConver
         }
     }
 
+    /**
+     * 处理直接消费消息请求
+     *
+     * @param command 原始命令
+     * @param header 请求头
+     * @param messageExt 消息内容
+     * @param responseFuture 响应 Future
+     * @return 异步执行结果
+     */
     @Override
     protected CompletableFuture<Void> processConsumeMessageDirectly(RemotingCommand command,
         ConsumeMessageDirectlyResultRequestHeader header, MessageExt messageExt,
@@ -219,6 +299,12 @@ public class RemotingChannel extends ProxyChannel implements RemoteChannelConver
         return JSON.toJSONString(this.subscriptionData);
     }
 
+    /**
+     * 从通道扩展属性中解析订阅数据集合
+     *
+     * @param channel 网络通道
+     * @return 订阅数据集合, 解析失败时返回 null
+     */
     public static Set<SubscriptionData> parseChannelExtendAttribute(Channel channel) {
         if (ChannelHelper.getChannelProtocolType(channel).equals(ChannelProtocolType.REMOTING) &&
             channel instanceof ChannelExtendAttributeGetter) {
@@ -238,6 +324,11 @@ public class RemotingChannel extends ProxyChannel implements RemoteChannelConver
         return null;
     }
 
+    /**
+     * 转换为远端通道对象
+     *
+     * @return 远端通道对象
+     */
     @Override
     public RemoteChannel toRemoteChannel() {
         return new RemoteChannel(
@@ -248,6 +339,11 @@ public class RemotingChannel extends ProxyChannel implements RemoteChannelConver
             this.getChannelExtendAttribute());
     }
 
+    /**
+     * 返回通道可读字符串
+     *
+     * @return 通道字符串表示
+     */
     @Override
     public String toString() {
         return MoreObjects.toStringHelper(this)

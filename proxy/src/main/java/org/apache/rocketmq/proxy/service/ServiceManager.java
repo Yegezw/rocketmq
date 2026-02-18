@@ -26,6 +26,9 @@ import org.apache.rocketmq.proxy.service.relay.ProxyRelayService;
 import org.apache.rocketmq.proxy.service.route.TopicRouteService;
 import org.apache.rocketmq.proxy.service.transaction.TransactionService;
 
+/**
+ * Proxy 服务管理器接口, 聚合各类核心服务组件
+ */
 public interface ServiceManager extends StartAndShutdown {
     MessageService getMessageService();
 

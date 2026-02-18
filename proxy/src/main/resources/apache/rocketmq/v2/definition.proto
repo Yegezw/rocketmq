@@ -1,0 +1,598 @@
+// Licensed to the Apache Software Foundation (ASF) under one or more
+// contributor license agreements.  See the NOTICE file distributed with
+// this work for additional information regarding copyright ownership.
+// The ASF licenses this file to You under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance with
+// the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+package apache.rocketmq.v2;
+
+option csharp_namespace = "Apache.Rocketmq.V2";
+option java_multiple_files = true;
+option java_package = "apache.rocketmq.v2";
+option java_generate_equals_and_hash = true;
+option java_string_check_utf8 = true;
+option java_outer_classname = "MQDomain";
+
+// 事务消息终态枚举
+enum TransactionResolution {
+  TRANSACTION_RESOLUTION_UNSPECIFIED = 0;
+  COMMIT = 1;
+  ROLLBACK = 2;
+}
+
+// 事务决议来源枚举
+enum TransactionSource {
+  SOURCE_UNSPECIFIED = 0;
+  SOURCE_CLIENT = 1;
+  SOURCE_SERVER_CHECK = 2;
+}
+
+// 资源读写权限枚举
+enum Permission {
+  PERMISSION_UNSPECIFIED = 0;
+  NONE = 1;
+  READ = 2;
+  WRITE = 3;
+  READ_WRITE = 4;
+}
+
+// 过滤表达式类型枚举
+enum FilterType {
+  FILTER_TYPE_UNSPECIFIED = 0;
+  TAG = 1;
+  SQL = 2;
+}
+
+// 订阅过滤表达式定义
+message FilterExpression {
+  // 类型标识
+  FilterType type = 1;
+  // 表达式文本
+  string expression = 2;
+}
+
+// 消息重试策略定义
+message RetryPolicy {
+  // 最大重试次数
+  int32 max_attempts = 1;
+  oneof strategy {
+    // 指数退避策略
+    ExponentialBackoff exponential_backoff = 2;
+    // 自定义退避策略
+    CustomizedBackoff customized_backoff = 3;
+  }
+}
+
+// 指数退避算法参考: https://en.wikipedia.org/wiki/Exponential_backoff
+// 指数退避策略参数
+message ExponentialBackoff {
+  // 初始退避时长
+  google.protobuf.Duration initial = 1;
+  // 最大退避时长
+  google.protobuf.Duration max = 2;
+  // 退避倍数
+  float multiplier = 3;
+}
+
+// 自定义退避策略参数
+message CustomizedBackoff {
+  // 支持最终用户任意定义的经典退避策略.
+  // 典型值为: `1s 5s 10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h`
+  repeated google.protobuf.Duration next = 1;
+}
+
+// 资源标识定义
+message Resource {
+  // 资源命名空间
+  string resource_namespace = 1;
+
+  // 资源名称标识, 在抽象资源命名空间内保持唯一.
+  string name = 2;
+}
+
+// 订阅条目定义
+message SubscriptionEntry {
+  // 主题资源
+  Resource topic = 1;
+  // 过滤表达式
+  FilterExpression expression = 2;
+}
+
+// 地址表示方案枚举
+enum AddressScheme {
+  ADDRESS_SCHEME_UNSPECIFIED = 0;
+  IPv4 = 1;
+  IPv6 = 2;
+  DOMAIN_NAME = 3;
+}
+
+// 网络地址定义
+message Address {
+  // 主机地址
+  string host = 1;
+  // 端口号
+  int32 port = 2;
+}
+
+// 访问端点集合定义
+message Endpoints {
+  // 地址方案
+  AddressScheme scheme = 1;
+  // 地址列表
+  repeated Address addresses = 2;
+}
+
+// Broker 节点定义
+message Broker {
+  // Broker 名称
+  string name = 1;
+
+  // Broker 编号, 通常 id = 0 表示主节点, id > 0 表示从节点.
+  int32 id = 2;
+
+  // Broker 地址, 采用如下格式
+  // 1. dns 形式: [//authority/]host[:port]
+  // 2. ipv4:address[:port][,address[:port],...] - IPv4 地址
+  // 3. ipv6:address[:port][,address[:port],...] - IPv6 地址
+  Endpoints endpoints = 3;
+}
+
+// 消息队列定义
+message MessageQueue {
+  // 主题资源
+  Resource topic = 1;
+  // 标识编号
+  int32 id = 2;
+  // 访问权限
+  Permission permission = 3;
+  // Broker 节点信息
+  Broker broker = 4;
+  // 可接收消息类型列表
+  repeated MessageType accept_message_types = 5;
+}
+
+// 消息类型枚举
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+
+  NORMAL = 1;
+
+  // 顺序消息
+  FIFO = 2;
+
+  // 在指定时长后投递的消息.
+  DELAY = 3;
+
+  // 事务消息, 仅已提交事务的消息会投递给订阅者.
+  TRANSACTION = 4;
+}
+
+// 摘要算法类型枚举
+enum DigestType {
+  DIGEST_TYPE_UNSPECIFIED = 0;
+
+  // CRC 算法以较低计算开销检测随机数据错误.
+  CRC32 = 1;
+
+  // MD5 算法在碰撞率与计算开销之间取得平衡.
+  MD5 = 2;
+
+  // SHA 系列碰撞概率更低, 但计算开销更高.
+  SHA1 = 3;
+}
+
+// 发布到 Broker 或从 Broker 订阅消息时, 客户端应携带或校验消息体摘要以保证数据完整性.
+//
+// 发布消息时若检测到无效摘要, Broker 需要返回 BAD_REQUEST.
+//
+// 订阅消息时若检测到无效摘要, 消费端需按消息类型处理:
+// 1) 普通消息应立即 NACK 触发重新投递
+// 2) FIFO 消息需通过专用 RPC 重新拉取此前获取的消息批次
+// 消息摘要定义
+message Digest {
+  // 类型标识
+  DigestType type = 1;
+  // 摘要校验值
+  string checksum = 2;
+}
+
+// 客户端类型枚举
+enum ClientType {
+  CLIENT_TYPE_UNSPECIFIED = 0;
+  PRODUCER = 1;
+  PUSH_CONSUMER = 2;
+  SIMPLE_CONSUMER = 3;
+  PULL_CONSUMER = 4;
+}
+
+// 消息体编码类型枚举
+enum Encoding {
+  ENCODING_UNSPECIFIED = 0;
+
+  IDENTITY = 1;
+
+  GZIP = 2;
+}
+
+// 系统属性集合定义
+message SystemProperties {
+  // 标签, 可选.
+  optional string tag = 1;
+
+  // 消息键
+  repeated string keys = 2;
+
+  // 消息标识, 由客户端生成并保持唯一.
+  // 若 message_id 为空, 发送消息请求将以 `INVALID_ARGUMENT` 终止.
+  string message_id = 3;
+
+  // 消息正文摘要
+  Digest body_digest = 4;
+
+  // 消息体编码, 可选值包括 identity, gzip, snappy 等.
+  Encoding body_encoding = 5;
+
+  // 消息类型: 普通, FIFO 或事务.
+  MessageType message_type = 6;
+
+  // 消息生成时间点.
+  google.protobuf.Timestamp born_timestamp = 7;
+
+  // 消息生成主机, 可选 IPv4, IPv6 或客户端域名.
+  string born_host = 8;
+
+  // 消息在 Broker 存储的时间点, 发送请求场景该字段为空.
+  optional google.protobuf.Timestamp store_timestamp = 9;
+
+  // 存储该消息的 Broker 标识, 可以是 Broker 名称, IP 或其他唯一标识.
+  string store_host = 10;
+
+  // Broker 向客户端投递的时间点, 可选.
+  optional google.protobuf.Timestamp delivery_timestamp = 11;
+
+  // 若消息通过 POP 获取, 此字段保存回执句柄, 发送请求场景该字段为空.
+  // 客户端使用该回执句柄执行 ACK 或 NACK.
+  optional string receipt_handle = 12;
+
+  // 物理存储消息的消息队列标识符.
+  int32 queue_id = 13;
+
+  // 消息在队列中的偏移量, 发送请求场景该字段为空.
+  optional int64 queue_offset = 14;
+
+  // 一旦获取到消息, 服务器将在一段时间内保持不可见状态.
+  optional google.protobuf.Duration invisible_duration = 15;
+
+  // 业务代码可能暂时无法处理消息, 客户端可按退避策略请求再次投递.
+  // 首次投递时 delivery_attempt 为 1 而非 0, 发送请求场景该字段为空.
+  optional int32 delivery_attempt = 16;
+
+  // 定义同一主题内消息的组名, 可选.
+  optional string message_group = 17;
+
+  // 每条消息的链路追踪上下文, 可选.
+  optional string trace_context = 18;
+
+  // 若事务消息超过 `transaction_orphan_threshold` 仍未决议, 将视为孤儿事务消息.
+  // 管理孤儿事务消息的服务会选择可用生产者进行事务决议.
+  optional google.protobuf.Duration orphaned_transaction_recovery_duration = 19;
+
+  // 标识消息是否来自死信队列的附加信息.
+  optional DeadLetterQueue dead_letter_queue = 20;
+}
+
+// 死信来源信息定义
+message DeadLetterQueue {
+  // 死信消息的原始主题.
+  string topic = 1;
+  // 死信消息的原始消息 ID.
+  string message_id = 2;
+}
+
+// 消息模型定义
+message Message {
+
+  // 主题资源
+  Resource topic = 1;
+
+  // 用户自定义键值对.
+  // 若 user_properties 包含 RocketMQ 保留键, 发送消息请求将以 `INVALID_ARGUMENT` 终止.
+  // 保留键定义见下方链接
+  // 保留键定义链接: https://github.com/apache/rocketmq/blob/master/common/src/main/java/org/apache/rocketmq/common/message/MessageConst.java#L58
+  map<string, string> user_properties = 2;
+
+  // 系统属性
+  SystemProperties system_properties = 3;
+
+  // 消息体二进制数据
+  bytes body = 4;
+}
+
+// 队列分配结果定义
+message Assignment {
+  // 消息队列
+  MessageQueue message_queue = 1;
+}
+
+// 标准状态码枚举
+enum Code {
+  CODE_UNSPECIFIED = 0;
+
+  // 成功的通用代码.
+  OK = 20000;
+
+  // 多个返回结果的通用代码.
+  MULTIPLE_RESULTS = 30000;
+
+  // 错误请求的通用代码, 表明缺少必需的字段或标头.
+  BAD_REQUEST = 40000;
+  // 接入点格式非法.
+  ILLEGAL_ACCESS_POINT = 40001;
+  // 主题格式不合法.
+  ILLEGAL_TOPIC = 40002;
+  // 消费者组格式不合法.
+  ILLEGAL_CONSUMER_GROUP = 40003;
+  // 消息标签格式不合法.
+  ILLEGAL_MESSAGE_TAG = 40004;
+  // 消息密钥格式不合法.
+  ILLEGAL_MESSAGE_KEY = 40005;
+  // 消息组格式不合法.
+  ILLEGAL_MESSAGE_GROUP = 40006;
+  // 消息属性键的格式不合法.
+  ILLEGAL_MESSAGE_PROPERTY_KEY = 40007;
+  // 事务 ID 无效.
+  INVALID_TRANSACTION_ID = 40008;
+  // 消息 ID 格式不合法.
+  ILLEGAL_MESSAGE_ID = 40009;
+  // 过滤器表达式的格式非法.
+  ILLEGAL_FILTER_EXPRESSION = 40010;
+  // 请求的不可见时长无效.
+  ILLEGAL_INVISIBLE_TIME = 40011;
+  // 消息的传递时间戳无效.
+  ILLEGAL_DELIVERY_TIME = 40012;
+  // 消息的回执句柄无效.
+  INVALID_RECEIPT_HANDLE = 40013;
+  // 消息属性与其类型冲突.
+  MESSAGE_PROPERTY_CONFLICT_WITH_TYPE = 40014;
+  // 无法识别客户端类型.
+  UNRECOGNIZED_CLIENT_TYPE = 40015;
+  // 消息已损坏.
+  MESSAGE_CORRUPTED = 40016;
+  // 由于缺少 x-mq-client-id 标头, 请求被拒绝.
+  CLIENT_ID_REQUIRED = 40017;
+  // 轮询时间非法.
+  ILLEGAL_POLLING_TIME = 40018;
+  // 偏移量非法.
+  ILLEGAL_OFFSET = 40019;
+
+  // 通用代码表明客户端请求缺少有效的身份验证
+  // 所请求资源的凭据.
+  UNAUTHORIZED = 40100;
+
+  // 通用代码表示该帐户因逾期付款而被暂停.
+  PAYMENT_REQUIRED = 40200;
+
+  // 用户无权限操作情况下的通用代码.
+  FORBIDDEN = 40300;
+
+  // 未找到资源的通用代码.
+  NOT_FOUND = 40400;
+  // 未从服务器找到消息.
+  MESSAGE_NOT_FOUND = 40401;
+  // 主题资源不存在.
+  TOPIC_NOT_FOUND = 40402;
+  // 消费者组资源不存在.
+  CONSUMER_GROUP_NOT_FOUND = 40403;
+  // 未从服务器找到偏移量.
+  OFFSET_NOT_FOUND = 40404;
+
+  // 表示连接到服务器, 从服务器读取数据或向服务器写入数据时客户端超时的通用代码.
+  REQUEST_TIMEOUT = 40800;
+
+  // 通用代码表示请求实体大于服务器定义的限制.
+  PAYLOAD_TOO_LARGE = 41300;
+  // 消息正文大小超过阈值.
+  MESSAGE_BODY_TOO_LARGE = 41301;
+  // 消息正文为空.
+  MESSAGE_BODY_EMPTY = 41302;
+
+  // 不满足前置条件的用例的通用代码.
+  // 例如, 如果使用生产者实例在没有事先调用 start() 的情况下发布消息,
+  // 将引发此错误代码.
+  PRECONDITION_FAILED = 42800;
+
+  // 通用代码表明在短时间内发出了太多请求.
+  // 请求受到限制.
+  TOO_MANY_REQUESTS = 42900;
+
+  // 服务器因头字段太大而不愿处理请求的情况的通用代码.
+  // 在减少请求头字段的大小之后可以重新提交请求.
+  REQUEST_HEADER_FIELDS_TOO_LARGE = 43100;
+  // 消息属性总大小超过阈值.
+  MESSAGE_PROPERTIES_TOO_LARGE = 43101;
+
+  // 通用代码表示服务器/客户端遇到意外情况
+  // 阻止其满足请求的条件.
+  INTERNAL_ERROR = 50000;
+  // 代码表明服务器遇到意外情况
+  // 这阻止了它满足请求.
+  // 此错误响应是通用的“兜底”响应.
+  // 通常, 这表明服务器无法找到更好的替代方案
+  // 响应的错误代码.有时, 服务器管理员会记录错误
+  // 诸如 500 状态代码之类的响应以及有关请求的更多详细信息
+  // 以防止将来再次发生该错误.
+  //
+  // 参考 https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+  INTERNAL_SERVER_ERROR = 50001;
+  // HA 机制现在不起作用.
+  HA_NOT_AVAILABLE = 50002;
+
+  // 通用代码意味着服务器或客户端不支持
+  // 满足请求所需的功能.
+  NOT_IMPLEMENTED = 50100;
+
+  // 通用代码表示服务器充当网关或代理,
+  // 没有及时从上游服务器得到满意的响应.
+  // 参考 https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/504
+  PROXY_TIMEOUT = 50400;
+  // 消息持久化超时.
+  MASTER_PERSISTENCE_TIMEOUT = 50401;
+  // 从节点持久化超时.
+  SLAVE_PERSISTENCE_TIMEOUT = 50402;
+
+  // 不支持的操作的通用代码.
+  UNSUPPORTED = 50500;
+  // 当前版本不允许操作.
+  VERSION_UNSUPPORTED = 50501;
+  // 不支持消息校验操作, 常见于对 FIFO 消息执行校验, 该操作违反 FIFO 语义.
+  VERIFY_FIFO_MESSAGE_UNSUPPORTED = 50502;
+
+  // 消息消费失败的通用代码.
+  FAILED_TO_CONSUME_MESSAGE = 60000;
+}
+
+// 统一状态定义
+message Status {
+  // 状态码
+  Code code = 1;
+  // 状态描述信息
+  string message = 2;
+}
+
+// SDK 语言类型枚举
+enum Language {
+  LANGUAGE_UNSPECIFIED = 0;
+  JAVA = 1;
+  CPP = 2;
+  DOT_NET = 3;
+  GOLANG = 4;
+  RUST = 5;
+  PYTHON = 6;
+  PHP = 7;
+  NODE_JS = 8;
+  RUBY = 9;
+  OBJECTIVE_C = 10;
+  DART = 11;
+  KOTLIN = 12;
+}
+
+// 客户端 UserAgent 定义
+message UA {
+  // SDK 语言
+  Language language = 1;
+
+  // SDK 版本
+  string version = 2;
+
+  // 平台详细信息, 包括操作系统名称, 版本, 架构等.
+  string platform = 3;
+
+  // 节点的主机名
+  string hostname = 4;
+}
+
+// 客户端设置定义
+message Settings {
+  // 全部客户端通用配置.
+  optional ClientType client_type = 1;
+
+  // 访问接入点
+  optional Endpoints access_point = 2;
+
+  // 发布消息遇到限流或服务端内部错误时, 发布者应按递增退避间隔自动重试.
+  //
+  // 消息处理失败时, `backoff_policy` 描述消息可再次被消费的间隔.
+  //
+  // 对 FIFO 消息, 间隔应相对较短, 因为同一消息组仅在前一条消息生命周期结束后才会继续投递.
+  optional RetryPolicy backoff_policy = 3;
+
+  // 除长轮询外的 RPC 请求超时.
+  optional google.protobuf.Duration request_timeout = 4;
+
+  oneof pub_sub {
+    // 发布设置
+    Publishing publishing = 5;
+
+    // 订阅设置
+    Subscription subscription = 6;
+  }
+
+  // UserAgent 详情
+  UA user_agent = 7;
+
+  // 指标上报设置
+  Metric metric = 8;
+}
+
+// 生产者发布设置定义
+message Publishing {
+  // 以下发布设置由客户端指定, 当前无需服务端主动下发.
+  //
+  // 消息将发布到的主题列表.
+  repeated Resource topics = 1;
+
+  // 当消息体超过 `max_body_size` 时 Broker 将拒绝请求, 建议生产者在客户端侧先校验.
+  int32 max_body_size = 2;
+
+  // 当 `validate_message_type` 为 false 时, 发布前无需按 messageQueue 的 `accept_message_types` 校验消息类型.
+  bool validate_message_type = 3;
+}
+
+// 消费者订阅设置定义
+message Subscription {
+  // 以下订阅设置由客户端指定, 当前无需服务端主动下发.
+  //
+  // 消费组.
+  optional Resource group = 1;
+
+  // 消费者订阅信息.
+  repeated SubscriptionEntry subscriptions = 2;
+
+  // 以下订阅设置由服务端下发, 需要服务端主动推送.
+  //
+  // 当 FIFO 为 `true` 时, 同一消息组按先进先出方式处理.
+  //
+  // Broker 在前一条消息完成确认前, 不会继续投递同组后续消息.
+  optional bool fifo = 3;
+
+  // 推消费客户端的消息接收批量大小.
+  optional int32 receive_batch_size = 4;
+
+  // `ReceiveMessageRequest` 的长轮询超时, 对推消费客户端必需.
+  optional google.protobuf.Duration long_polling_timeout = 5;
+}
+
+// 指标上报设置定义
+message Metric {
+  // 指示客户端是否向服务端导出本地指标.
+  bool on = 1;
+
+  // 客户端指标导出目标端点, 当开关开启时该字段必填.
+  optional Endpoints endpoints = 2;
+}
+
+// 查询位点策略枚举
+enum QueryOffsetPolicy {
+  // 如果客户端希望回放所有现有消息, 请使用此选项.
+  BEGINNING = 0;
+
+  // 如果客户端希望跳过所有现有消息, 请使用此选项.
+  END = 1;
+
+  // 如果目标是基于时间的搜索, 请使用此选项.
+  TIMESTAMP = 2;
+}

@@ -20,12 +20,35 @@ import com.google.common.base.Objects;
 import org.apache.rocketmq.remoting.protocol.LanguageCode;
 import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
 
+/**
+ * 消费者连接聚合属性
+ */
 public class ConsumerAttr {
+    /**
+     * 消费者组
+     */
     String group;
+    /**
+     * 客户端语言
+     */
     LanguageCode language;
+    /**
+     * 客户端版本
+     */
     int version;
+    /**
+     * 消费模式
+     */
     ConsumeType consumeMode;
 
+    /**
+     * 初始化消费者属性
+     *
+     * @param group 消费者组
+     * @param language 客户端语言
+     * @param version 客户端版本
+     * @param consumeMode 消费模式
+     */
     public ConsumerAttr(String group, LanguageCode language, int version, ConsumeType consumeMode) {
         this.group = group;
         this.language = language;
@@ -33,6 +56,12 @@ public class ConsumerAttr {
         this.consumeMode = consumeMode;
     }
 
+    /**
+     * 判断消费者属性是否相等
+     *
+     * @param o 比较对象
+     * @return 是否相等
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o)
@@ -43,6 +72,11 @@ public class ConsumerAttr {
         return version == attr.version && Objects.equal(group, attr.group) && language == attr.language && consumeMode == attr.consumeMode;
     }
 
+    /**
+     * 返回消费者属性哈希值
+     *
+     * @return 哈希值
+     */
     @Override
     public int hashCode() {
         return Objects.hashCode(group, language, version, consumeMode);

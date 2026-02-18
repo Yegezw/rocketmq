@@ -32,16 +32,42 @@ import org.apache.rocketmq.proxy.common.ProxyContext;
 import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * Remoting 鉴权流水线, 负责请求权限校验
+ */
 public class AuthorizationPipeline implements RequestPipeline {
+    /**
+     * Proxy 模块日志记录器
+     */
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * 鉴权配置
+     */
     private final AuthConfig authConfig;
+    /**
+     * 鉴权执行器
+     */
     private final AuthorizationEvaluator authorizationEvaluator;
 
+    /**
+     * 构造鉴权流水线
+     *
+     * @param authConfig 鉴权配置
+     * @param messagingProcessor 消息处理器
+     */
     public AuthorizationPipeline(AuthConfig authConfig, MessagingProcessor messagingProcessor) {
         this.authConfig = authConfig;
         this.authorizationEvaluator = AuthorizationFactory.getEvaluator(authConfig, messagingProcessor::getMetadataService);
     }
 
+    /**
+     * 执行鉴权流程
+     *
+     * @param ctx Netty 处理上下文
+     * @param request remoting 请求命令
+     * @param context Proxy 上下文
+     * @throws Exception 执行异常
+     */
     @Override
     public void execute(ChannelHandlerContext ctx, RemotingCommand request, ProxyContext context) throws Exception {
         if (!authConfig.isAuthorizationEnabled()) {
@@ -58,6 +84,14 @@ public class AuthorizationPipeline implements RequestPipeline {
         }
     }
 
+    /**
+     * 构建鉴权上下文列表
+     *
+     * @param request remoting 请求命令
+     * @param ctx Netty 处理上下文
+     * @param context Proxy 上下文
+     * @return 鉴权上下文列表
+     */
     protected List<AuthorizationContext> newContexts(RemotingCommand request, ChannelHandlerContext ctx, ProxyContext context) {
         return AuthorizationFactory.newContexts(authConfig, ctx, request);
     }

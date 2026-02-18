@@ -16,9 +16,6 @@
  */
 package org.apache.rocketmq.remoting;
 
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import org.apache.rocketmq.remoting.exception.RemotingConnectException;
 import org.apache.rocketmq.remoting.exception.RemotingSendRequestException;
 import org.apache.rocketmq.remoting.exception.RemotingTimeoutException;
@@ -27,26 +24,84 @@ import org.apache.rocketmq.remoting.netty.NettyRequestProcessor;
 import org.apache.rocketmq.remoting.netty.ResponseFuture;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+
+/**
+ * remoting 客户端接口<br>
+ * 定义名称服务地址管理与请求调用能力
+ */
 public interface RemotingClient extends RemotingService {
 
+    /**
+     * 更新 NameServer 地址列表
+     *
+     * @param addrs NameServer 地址列表
+     */
     void updateNameServerAddressList(final List<String> addrs);
 
     List<String> getNameServerAddressList();
 
     List<String> getAvailableNameSrvList();
 
+    /**
+     * 同步调用远端请求
+     *
+     * @param addr 目标地址
+     * @param request 请求命令
+     * @param timeoutMillis 超时时间 毫秒
+     * @return 响应命令
+     * @throws InterruptedException 线程中断异常
+     * @throws RemotingConnectException 连接异常
+     * @throws RemotingSendRequestException 请求发送异常
+     * @throws RemotingTimeoutException 请求超时异常
+     */
     RemotingCommand invokeSync(final String addr, final RemotingCommand request,
         final long timeoutMillis) throws InterruptedException, RemotingConnectException,
         RemotingSendRequestException, RemotingTimeoutException;
 
+    /**
+     * 异步调用远端请求
+     *
+     * @param addr 目标地址
+     * @param request 请求命令
+     * @param timeoutMillis 超时时间 毫秒
+     * @param invokeCallback 回调对象
+     * @throws InterruptedException 线程中断异常
+     * @throws RemotingConnectException 连接异常
+     * @throws RemotingTooMuchRequestException 请求过载异常
+     * @throws RemotingTimeoutException 请求超时异常
+     * @throws RemotingSendRequestException 请求发送异常
+     */
     void invokeAsync(final String addr, final RemotingCommand request, final long timeoutMillis,
         final InvokeCallback invokeCallback) throws InterruptedException, RemotingConnectException,
         RemotingTooMuchRequestException, RemotingTimeoutException, RemotingSendRequestException;
 
+    /**
+     * 单向调用远端请求
+     *
+     * @param addr 目标地址
+     * @param request 请求命令
+     * @param timeoutMillis 超时时间 毫秒
+     * @throws InterruptedException 线程中断异常
+     * @throws RemotingConnectException 连接异常
+     * @throws RemotingTooMuchRequestException 请求过载异常
+     * @throws RemotingTimeoutException 请求超时异常
+     * @throws RemotingSendRequestException 请求发送异常
+     */
     void invokeOneway(final String addr, final RemotingCommand request, final long timeoutMillis)
         throws InterruptedException, RemotingConnectException, RemotingTooMuchRequestException,
         RemotingTimeoutException, RemotingSendRequestException;
 
+    /**
+     * 以 CompletableFuture 形式发起异步调用
+     *
+     * @param addr 目标地址
+     * @param request 请求命令
+     * @param timeoutMillis 超时时间 毫秒
+     * @return 异步响应 Future
+     */
     default CompletableFuture<RemotingCommand> invoke(final String addr, final RemotingCommand request,
         final long timeoutMillis) {
         CompletableFuture<RemotingCommand> future = new CompletableFuture<>();
@@ -74,6 +129,13 @@ public interface RemotingClient extends RemotingService {
         return future;
     }
 
+    /**
+     * 注册请求处理器
+     *
+     * @param requestCode 请求码
+     * @param processor 请求处理器
+     * @param executor 处理线程池
+     */
     void registerProcessor(final int requestCode, final NettyRequestProcessor processor,
         final ExecutorService executor);
 
@@ -83,5 +145,10 @@ public interface RemotingClient extends RemotingService {
 
     boolean isAddressReachable(final String addr);
 
+    /**
+     * 批量关闭连接通道
+     *
+     * @param addrList 目标地址列表
+     */
     void closeChannels(final List<String> addrList);
 }

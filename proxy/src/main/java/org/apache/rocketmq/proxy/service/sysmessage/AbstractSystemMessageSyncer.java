@@ -46,14 +46,43 @@ import org.apache.rocketmq.remoting.RPCHook;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 
+/**
+ * 系统消息同步抽象基类, 封装广播主题发送与消费初始化逻辑
+ */
 public abstract class AbstractSystemMessageSyncer implements StartAndShutdown, MessageListenerConcurrently {
+    /**
+     * Proxy 日志记录器
+     */
     protected static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * 主题路由服务
+     */
     protected final TopicRouteService topicRouteService;
+    /**
+     * 管理服务
+     */
     protected final AdminService adminService;
+    /**
+     * MQ 客户端工厂
+     */
     protected final MQClientAPIFactory mqClientAPIFactory;
+    /**
+     * 远程调用钩子
+     */
     protected final RPCHook rpcHook;
+    /**
+     * 系统主题广播消费者
+     */
     protected DefaultMQPushConsumer defaultMQPushConsumer;
 
+    /**
+     * 初始化系统消息同步器
+     *
+     * @param topicRouteService 主题路由服务
+     * @param adminService 管理服务
+     * @param mqClientAPIFactory MQ 客户端工厂
+     * @param rpcHook 远程调用钩子
+     */
     public AbstractSystemMessageSyncer(TopicRouteService topicRouteService, AdminService adminService, MQClientAPIFactory mqClientAPIFactory, RPCHook rpcHook) {
         this.topicRouteService = topicRouteService;
         this.adminService = adminService;
@@ -90,6 +119,11 @@ public abstract class AbstractSystemMessageSyncer implements StartAndShutdown, M
         return rpcHook;
     }
 
+    /**
+     * 发送系统广播消息
+     *
+     * @param data 广播数据对象
+     */
     protected void sendSystemMessage(Object data) {
         String targetTopic = this.getBroadcastTopicName();
         try {
@@ -120,6 +154,14 @@ public abstract class AbstractSystemMessageSyncer implements StartAndShutdown, M
         }
     }
 
+    /**
+     * 构造发送系统消息请求头
+     *
+     * @param message 消息对象
+     * @param producerGroup 生产者组
+     * @param queueId 队列标识
+     * @return 发送请求头
+     */
     protected SendMessageRequestHeader buildSendMessageRequestHeader(Message message,
         String producerGroup, int queueId) {
         SendMessageRequestHeader requestHeader = new SendMessageRequestHeader();
@@ -138,6 +180,11 @@ public abstract class AbstractSystemMessageSyncer implements StartAndShutdown, M
         return requestHeader;
     }
 
+    /**
+     * 启动系统消息同步器并初始化广播消费者
+     *
+     * @throws Exception 启动异常
+     */
     @Override
     public void start() throws Exception {
         this.createSysTopic();
@@ -155,6 +202,9 @@ public abstract class AbstractSystemMessageSyncer implements StartAndShutdown, M
         this.defaultMQPushConsumer.start();
     }
 
+    /**
+     * 创建系统广播主题
+     */
     protected void createSysTopic() {
         String clusterName = this.getBroadcastTopicClusterName();
         if (StringUtils.isEmpty(clusterName)) {
@@ -174,6 +224,11 @@ public abstract class AbstractSystemMessageSyncer implements StartAndShutdown, M
         }
     }
 
+    /**
+     * 停止系统消息同步器
+     *
+     * @throws Exception 停止异常
+     */
     @Override
     public void shutdown() throws Exception {
         this.defaultMQPushConsumer.shutdown();

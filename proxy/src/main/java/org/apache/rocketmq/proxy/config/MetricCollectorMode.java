@@ -16,22 +16,39 @@
  */
 package org.apache.rocketmq.proxy.config;
 
+/**
+ * 指标采集模式枚举
+ */
 public enum MetricCollectorMode {
     /**
      * Do not collect the metric from clients.
+     * <br>
+     * 不从客户端采集指标
      */
     OFF("off"),
     /**
      * Collect the metric from clients to the given address.
+     * <br>
+     * 从客户端采集指标并上报到指定地址
      */
     ON("on"),
     /**
      * Collect the metric by the proxy itself.
+     * <br>
+     * 由 Proxy 自行采集指标
      */
     PROXY("proxy");
 
+    /**
+     * 模式字符串值
+     */
     private final String modeString;
 
+    /**
+     * 构造指标采集模式枚举
+     *
+     * @param modeString 模式字符串
+     */
     MetricCollectorMode(String modeString) {
         this.modeString = modeString;
     }

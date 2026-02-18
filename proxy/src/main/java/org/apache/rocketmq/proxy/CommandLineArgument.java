@@ -16,10 +16,25 @@
  */
 package org.apache.rocketmq.proxy;
 
+/**
+ * Proxy 启动命令行参数对象
+ */
 public class CommandLineArgument {
+    /**
+     * NameServer 地址
+     */
     private String namesrvAddr;
+    /**
+     * Broker 配置文件路径
+     */
     private String brokerConfigPath;
+    /**
+     * Proxy 配置文件路径
+     */
     private String proxyConfigPath;
+    /**
+     * Proxy 运行模式
+     */
     private String proxyMode;
 
     public String getNamesrvAddr() {

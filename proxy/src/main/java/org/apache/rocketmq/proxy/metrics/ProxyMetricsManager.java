@@ -58,20 +58,56 @@ import static org.apache.rocketmq.proxy.metrics.ProxyMetricsConstant.GAUGE_PROXY
 import static org.apache.rocketmq.proxy.metrics.ProxyMetricsConstant.LABEL_PROXY_MODE;
 import static org.apache.rocketmq.proxy.metrics.ProxyMetricsConstant.NODE_TYPE_PROXY;
 
+/**
+ * Proxy 指标管理器, 负责指标注册与导出器生命周期管理
+ */
 public class ProxyMetricsManager implements StartAndShutdown {
+    /**
+     * Proxy 模块日志记录器
+     */
     private final static Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
 
+    /**
+     * Proxy 指标配置
+     */
     private static ProxyConfig proxyConfig;
+    /**
+     * 全局标签映射
+     */
     private final static Map<String, String> LABEL_MAP = new HashMap<>();
+    /**
+     * AttributesBuilder 供应器
+     */
     public static Supplier<AttributesBuilder> attributesBuilderSupplier;
 
+    /**
+     * OTLP gRPC 指标导出器
+     */
     private OtlpGrpcMetricExporter metricExporter;
+    /**
+     * 周期指标读取器
+     */
     private PeriodicMetricReader periodicMetricReader;
+    /**
+     * Prometheus HTTP 服务
+     */
     private PrometheusHttpServer prometheusHttpServer;
+    /**
+     * 日志指标导出器
+     */
     private MetricExporter loggingMetricExporter;
 
+    /**
+     * Proxy 存活状态指标
+     */
     public static ObservableLongGauge proxyUp = null;
 
+    /**
+     * 初始化本地模式指标
+     *
+     * @param brokerMetricsManager Broker 指标管理器
+     * @param proxyConfig Proxy 指标配置
+     */
     public static void initLocalMode(BrokerMetricsManager brokerMetricsManager, ProxyConfig proxyConfig) {
         if (proxyConfig.getMetricsExporterType() == MetricsExporterType.DISABLE) {
             return;
@@ -84,11 +120,22 @@ public class ProxyMetricsManager implements StartAndShutdown {
         initMetrics(brokerMetricsManager.getBrokerMeter(), BrokerMetricsManager::newAttributesBuilder);
     }
 
+    /**
+     * 初始化集群模式指标管理器
+     *
+     * @param proxyConfig Proxy 指标配置
+     * @return 指标管理器实例
+     */
     public static ProxyMetricsManager initClusterMode(ProxyConfig proxyConfig) {
         ProxyMetricsManager.proxyConfig = proxyConfig;
         return new ProxyMetricsManager();
     }
 
+    /**
+     * 创建带全局标签的 AttributesBuilder
+     *
+     * @return AttributesBuilder 对象
+     */
     public static AttributesBuilder newAttributesBuilder() {
         AttributesBuilder attributesBuilder;
         if (attributesBuilderSupplier == null) {
@@ -101,6 +148,12 @@ public class ProxyMetricsManager implements StartAndShutdown {
         return attributesBuilder;
     }
 
+    /**
+     * 初始化核心指标对象
+     *
+     * @param meter 指标 Meter
+     * @param attributesBuilderSupplier AttributesBuilder 供应器
+     */
     private static void initMetrics(Meter meter, Supplier<AttributesBuilder> attributesBuilderSupplier) {
         ProxyMetricsManager.attributesBuilderSupplier = attributesBuilderSupplier;
 
@@ -110,9 +163,17 @@ public class ProxyMetricsManager implements StartAndShutdown {
             .buildWithCallback(measurement -> measurement.record(1, newAttributesBuilder().build()));
     }
 
+    /**
+     * 构造指标管理器
+     */
     public ProxyMetricsManager() {
     }
 
+    /**
+     * 校验指标导出配置是否可用
+     *
+     * @return 配置可用时返回 true
+     */
     private boolean checkConfig() {
         if (proxyConfig == null) {
             return false;
@@ -133,6 +194,11 @@ public class ProxyMetricsManager implements StartAndShutdown {
         return false;
     }
 
+    /**
+     * 启动指标导出组件并注册指标
+     *
+     * @throws Exception 启动异常
+     */
     @Override
     public void start() throws Exception {
         MetricsExporterType metricsExporterType = proxyConfig.getMetricsExporterType();
@@ -238,6 +304,11 @@ public class ProxyMetricsManager implements StartAndShutdown {
         initMetrics(proxyMeter, null);
     }
 
+    /**
+     * 关闭指标导出组件
+     *
+     * @throws Exception 关闭异常
+     */
     @Override
     public void shutdown() throws Exception {
         if (proxyConfig.getMetricsExporterType() == MetricsExporterType.OTLP_GRPC) {

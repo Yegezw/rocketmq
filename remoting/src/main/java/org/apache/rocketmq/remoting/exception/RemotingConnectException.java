@@ -16,13 +16,30 @@
  */
 package org.apache.rocketmq.remoting.exception;
 
+/**
+ * remoting 连接异常
+ */
 public class RemotingConnectException extends RemotingException {
+    /**
+     * 序列化版本号
+     */
     private static final long serialVersionUID = -5565366231695911316L;
 
+    /**
+     * 按目标地址构造连接异常
+     *
+     * @param addr 目标地址
+     */
     public RemotingConnectException(String addr) {
         this(addr, null);
     }
 
+    /**
+     * 按目标地址和根因构造连接异常
+     *
+     * @param addr 目标地址
+     * @param cause 根因异常
+     */
     public RemotingConnectException(String addr, Throwable cause) {
         super("connect to " + addr + " failed", cause);
     }

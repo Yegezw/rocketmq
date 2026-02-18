@@ -31,16 +31,41 @@ import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.proxy.common.ProxyContext;
 import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 
+/**
+ * 鉴权流水线, 负责校验当前主体是否具备目标资源访问权限
+ */
 public class AuthorizationPipeline implements RequestPipeline {
+    /**
+     * Proxy 模块日志记录器
+     */
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * 鉴权配置
+     */
     private final AuthConfig authConfig;
+    /**
+     * 鉴权执行器
+     */
     private final AuthorizationEvaluator authorizationEvaluator;
 
+    /**
+     * 构造鉴权流水线
+     *
+     * @param authConfig 鉴权配置
+     * @param messagingProcessor 消息处理器, 用于提供元数据服务
+     */
     public AuthorizationPipeline(AuthConfig authConfig, MessagingProcessor messagingProcessor) {
         this.authConfig = authConfig;
         this.authorizationEvaluator = AuthorizationFactory.getEvaluator(authConfig, messagingProcessor::getMetadataService);
     }
 
+    /**
+     * 执行鉴权流程, 按配置决定是否启用权限校验
+     *
+     * @param context Proxy 上下文
+     * @param headers gRPC 请求头
+     * @param request 请求体
+     */
     @Override
     public void execute(ProxyContext context, Metadata headers, GeneratedMessageV3 request) {
         if (!authConfig.isAuthorizationEnabled()) {
@@ -57,6 +82,14 @@ public class AuthorizationPipeline implements RequestPipeline {
         }
     }
 
+    /**
+     * 构建鉴权上下文集合, 供鉴权执行器逐条校验
+     *
+     * @param context Proxy 上下文
+     * @param headers gRPC 请求头
+     * @param request 请求体
+     * @return 鉴权上下文列表
+     */
     protected List<AuthorizationContext> newContexts(ProxyContext context, Metadata headers, GeneratedMessageV3 request) {
         return AuthorizationFactory.newContexts(authConfig, headers, request);
     }

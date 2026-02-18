@@ -21,11 +21,26 @@ import io.grpc.Attributes;
 import io.grpc.Metadata;
 import io.grpc.ServerCall;
 
+/**
+ * gRPC 通用工具类<br>
+ * 提供 Header 与 Attribute 访问能力
+ */
 public class GrpcUtils {
 
+    /**
+     * 工具类构造函数
+     */
     private GrpcUtils() {
     }
 
+    /**
+     * 在 Header 不存在指定键时写入值
+     *
+     * @param headers gRPC Header
+     * @param key Header 键
+     * @param value Header 值
+     * @param <T> Header 值类型
+     */
     public static <T> void putHeaderIfNotExist(Metadata headers, Metadata.Key<T> key, T value) {
         if (headers == null) {
             return;

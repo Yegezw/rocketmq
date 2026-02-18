@@ -16,11 +16,32 @@
  */
 package org.apache.rocketmq.proxy.common;
 
+/**
+ * Proxy 异常码枚举
+ */
 public enum ProxyExceptionCode {
+    /**
+     * Broker 名称非法或不存在
+     */
     INVALID_BROKER_NAME,
+    /**
+     * 未找到事务关联数据
+     */
     TRANSACTION_DATA_NOT_FOUND,
+    /**
+     * 请求被访问控制策略拒绝
+     */
     FORBIDDEN,
+    /**
+     * 消息属性与消息类型冲突
+     */
     MESSAGE_PROPERTY_CONFLICT_WITH_TYPE,
+    /**
+     * ReceiptHandle 非法或已过期
+     */
     INVALID_RECEIPT_HANDLE,
+    /**
+     * Proxy 内部处理异常
+     */
     INTERNAL_SERVER_ERROR,
 }

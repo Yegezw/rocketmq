@@ -31,13 +31,30 @@ import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * 撤回消息活动实现
+ */
 public class RecallMessageActivity extends AbstractMessingActivity {
 
+    /**
+     * 构造撤回消息活动对象
+     *
+     * @param messagingProcessor 消息处理器
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     */
     public RecallMessageActivity(MessagingProcessor messagingProcessor,
                                  GrpcClientSettingsManager grpcClientSettingsManager, GrpcChannelManager grpcChannelManager) {
         super(messagingProcessor, grpcClientSettingsManager, grpcChannelManager);
     }
 
+    /**
+     * 处理撤回消息请求
+     *
+     * @param ctx Proxy 上下文
+     * @param request 撤回消息请求
+     * @return 撤回消息响应 Future
+     */
     public CompletableFuture<RecallMessageResponse> recallMessage(ProxyContext ctx,
         RecallMessageRequest request) {
         CompletableFuture<RecallMessageResponse> future = new CompletableFuture<>();

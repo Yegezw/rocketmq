@@ -16,6 +16,9 @@
  */
 package org.apache.rocketmq.remoting.rpc;
 
+/**
+ * 主题队列请求头抽象类
+ */
 public abstract class TopicQueueRequestHeader extends TopicRequestHeader {
 
     public abstract Integer getQueueId();

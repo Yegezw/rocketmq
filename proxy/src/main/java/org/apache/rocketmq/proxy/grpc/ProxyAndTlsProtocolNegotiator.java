@@ -17,12 +17,7 @@
 package org.apache.rocketmq.proxy.grpc;
 
 import io.grpc.Attributes;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcHttp2ConnectionHandler;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
-import io.grpc.netty.shaded.io.grpc.netty.InternalProtocolNegotiationEvent;
-import io.grpc.netty.shaded.io.grpc.netty.InternalProtocolNegotiator;
-import io.grpc.netty.shaded.io.grpc.netty.InternalProtocolNegotiators;
-import io.grpc.netty.shaded.io.grpc.netty.ProtocolNegotiationEvent;
+import io.grpc.netty.shaded.io.grpc.netty.*;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBuf;
 import io.grpc.netty.shaded.io.netty.buffer.ByteBufUtil;
 import io.grpc.netty.shaded.io.netty.channel.ChannelHandler;
@@ -42,10 +37,6 @@ import io.grpc.netty.shaded.io.netty.handler.ssl.util.InsecureTrustManagerFactor
 import io.grpc.netty.shaded.io.netty.handler.ssl.util.SelfSignedCertificate;
 import io.grpc.netty.shaded.io.netty.util.AsciiString;
 import io.grpc.netty.shaded.io.netty.util.CharsetUtil;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.List;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.common.constant.HAProxyConstants;
@@ -59,37 +50,84 @@ import org.apache.rocketmq.proxy.grpc.constant.AttributeKeys;
 import org.apache.rocketmq.remoting.common.TlsMode;
 import org.apache.rocketmq.remoting.netty.TlsSystemConfig;
 
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.List;
+
+/**
+ * 协议协商器, 负责按顺序处理 HAProxy Protocol 与 TLS 协商
+ */
 public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator.ProtocolNegotiator {
+    /**
+     * Proxy 模块日志记录器
+     */
     protected static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
 
+    /**
+     * Pipeline 中 HAProxy 解码器名称
+     */
     private static final String HA_PROXY_DECODER = "HAProxyDecoder";
+    /**
+     * Pipeline 中 HAProxy 处理器名称
+     */
     private static final String HA_PROXY_HANDLER = "HAProxyHandler";
+    /**
+     * Pipeline 中 TLS 处理器名称
+     */
     private static final String TLS_MODE_HANDLER = "TlsModeHandler";
     /**
      * the length of the ssl record header (in bytes)
+     * <br>
+     * SSL 记录头长度, 单位字节
      */
     private static final int SSL_RECORD_HEADER_LENGTH = 5;
 
+    /**
+     * gRPC TLS 上下文
+     */
     private static SslContext sslContext;
 
+    /**
+     * 构造协议协商器并加载 TLS 上下文
+     */
     public ProxyAndTlsProtocolNegotiator() {
         sslContext = loadSslContext();
     }
 
+    /**
+     * 返回协商后的传输方案
+     *
+     * @return 传输方案标识
+     */
     @Override
     public AsciiString scheme() {
         return AsciiString.of("https");
     }
 
+    /**
+     * 创建协议协商处理器
+     *
+     * @param grpcHandler gRPC HTTP2 连接处理器
+     * @return 协商处理器
+     */
     @Override
     public ChannelHandler newHandler(GrpcHttp2ConnectionHandler grpcHandler) {
         return new ProxyAndTlsProtocolHandler(grpcHandler);
     }
 
+    /**
+     * 关闭协商器资源
+     */
     @Override
     public void close() {
     }
 
+    /**
+     * 加载 TLS 上下文, 支持测试证书或指定证书文件
+     *
+     * @return TLS 上下文
+     */
     private static SslContext loadSslContext() {
         try {
             ProxyConfig proxyConfig = ConfigurationManager.getProxyConfig();
@@ -122,16 +160,37 @@ public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator
         }
     }
 
+    /**
+     * 首段协议探测处理器, 先识别 HAProxy 协议再切换 TLS 处理器
+     */
     private class ProxyAndTlsProtocolHandler extends ByteToMessageDecoder {
 
+        /**
+         * gRPC HTTP2 连接处理器
+         */
         private final GrpcHttp2ConnectionHandler grpcHandler;
 
+        /**
+         * 协议协商事件上下文
+         */
         private ProtocolNegotiationEvent pne = InternalProtocolNegotiationEvent.getDefault();
 
+        /**
+         * 构造协议探测处理器
+         *
+         * @param grpcHandler gRPC HTTP2 连接处理器
+         */
         public ProxyAndTlsProtocolHandler(GrpcHttp2ConnectionHandler grpcHandler) {
             this.grpcHandler = grpcHandler;
         }
 
+        /**
+         * 探测入站协议并安装对应处理器链
+         *
+         * @param ctx Channel 上下文
+         * @param in 入站字节流
+         * @param out 解码输出列表
+         */
         @Override
         protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
             try {
@@ -159,6 +218,13 @@ public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator
             }
         }
 
+        /**
+         * 记录协商事件, 供后续处理器透传连接属性
+         *
+         * @param ctx Channel 上下文
+         * @param evt 用户事件
+         * @throws Exception 事件处理异常
+         */
         @Override
         public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
             if (evt instanceof ProtocolNegotiationEvent) {
@@ -169,10 +235,23 @@ public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator
         }
     }
 
+    /**
+     * HAProxy 报文处理器, 将解析结果写入协商属性
+     */
     private class HAProxyMessageHandler extends ChannelInboundHandlerAdapter {
 
+        /**
+         * 协议协商事件上下文
+         */
         private ProtocolNegotiationEvent pne = InternalProtocolNegotiationEvent.getDefault();
 
+        /**
+         * 处理 HAProxy 报文并透传协商事件
+         *
+         * @param ctx Channel 上下文
+         * @param msg 入站消息
+         * @throws Exception 处理异常
+         */
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             if (msg instanceof HAProxyMessage) {
@@ -187,8 +266,10 @@ public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator
         /**
          * The definition of key refers to the implementation of nginx
          * <a href="https://nginx.org/en/docs/http/ngx_http_core_module.html#var_proxy_protocol_addr">ngx_http_core_module</a>
+         * <br>
+         * 键定义参考 nginx 对 proxy protocol 变量的实现
          *
-         * @param msg
+         * @param msg HAProxy 报文对象
          */
         private void handleWithMessage(HAProxyMessage msg) {
             try {
@@ -215,6 +296,13 @@ public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator
             }
         }
 
+        /**
+         * 记录协商事件, 供 HAProxy 解析结果合并属性
+         *
+         * @param ctx Channel 上下文
+         * @param evt 用户事件
+         * @throws Exception 事件处理异常
+         */
         @Override
         public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
             if (evt instanceof ProtocolNegotiationEvent) {
@@ -225,6 +313,12 @@ public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator
         }
     }
 
+    /**
+     * 处理 HAProxy TLV 扩展属性并写入协商属性
+     *
+     * @param tlv TLV 扩展对象
+     * @param builder 协商属性构建器
+     */
     protected void handleHAProxyTLV(HAProxyTLV tlv, Attributes.Builder builder) {
         byte[] valueBytes = ByteBufUtil.getBytes(tlv.content());
         if (!BinaryUtil.isAscii(valueBytes)) {
@@ -235,13 +329,30 @@ public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator
         builder.set(key, new String(valueBytes, CharsetUtil.UTF_8));
     }
 
+    /**
+     * TLS 模式处理器, 根据全局 TLS 模式或报文内容选择加密与明文处理链
+     */
     private class TlsModeHandler extends ByteToMessageDecoder {
 
+        /**
+         * 协议协商事件上下文
+         */
         private ProtocolNegotiationEvent pne = InternalProtocolNegotiationEvent.getDefault();
 
+        /**
+         * TLS 处理器
+         */
         private final ChannelHandler ssl;
+        /**
+         * 明文处理器
+         */
         private final ChannelHandler plaintext;
 
+        /**
+         * 构造 TLS 模式处理器
+         *
+         * @param grpcHandler gRPC HTTP2 连接处理器
+         */
         public TlsModeHandler(GrpcHttp2ConnectionHandler grpcHandler) {
             this.ssl = InternalProtocolNegotiators.serverTls(sslContext)
                     .newHandler(grpcHandler);
@@ -249,6 +360,13 @@ public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator
                     .newHandler(grpcHandler);
         }
 
+        /**
+         * 根据 TLS 模式与报文特征选择后续处理器
+         *
+         * @param ctx Channel 上下文
+         * @param in 入站字节流
+         * @param out 解码输出列表
+         */
         @Override
         protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
             try {
@@ -259,6 +377,7 @@ public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator
                     ctx.pipeline().addAfter(ctx.name(), null, this.plaintext);
                 } else {
                     // in SslHandler.isEncrypted, it need at least 5 bytes to judge is encrypted or not
+                    // 判断是否为 TLS 报文前, 需要至少 5 字节记录头
                     if (in.readableBytes() < SSL_RECORD_HEADER_LENGTH) {
                         return;
                     }
@@ -276,6 +395,13 @@ public class ProxyAndTlsProtocolNegotiator implements InternalProtocolNegotiator
             }
         }
 
+        /**
+         * 记录协商事件, 供 TLS 处理链复用连接属性
+         *
+         * @param ctx Channel 上下文
+         * @param evt 用户事件
+         * @throws Exception 事件处理异常
+         */
         @Override
         public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
             if (evt instanceof ProtocolNegotiationEvent) {

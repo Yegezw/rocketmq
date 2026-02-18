@@ -16,7 +16,16 @@
  */
 package org.apache.rocketmq.common.constant;
 
+/**
+ * 消费起始位点模式定义
+ */
 public class ConsumeInitMode {
+    /**
+     * 从最小位点开始消费
+     */
     public static final int MIN = 0;
+    /**
+     * 从最大位点开始消费
+     */
     public static final int MAX = 1;
 }

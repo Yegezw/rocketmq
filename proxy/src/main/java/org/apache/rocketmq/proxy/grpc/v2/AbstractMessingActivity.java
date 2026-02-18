@@ -25,12 +25,34 @@ import org.apache.rocketmq.proxy.grpc.v2.common.GrpcClientSettingsManager;
 import org.apache.rocketmq.proxy.grpc.v2.common.GrpcValidator;
 import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 
+/**
+ * gRPC 消息活动抽象基类, 提供公共依赖与参数校验能力
+ */
 public abstract class AbstractMessingActivity {
+    /**
+     * Proxy 模块日志记录器
+     */
     protected static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * 消息处理器
+     */
     protected final MessagingProcessor messagingProcessor;
+    /**
+     * gRPC 客户端设置管理器
+     */
     protected final GrpcClientSettingsManager grpcClientSettingsManager;
+    /**
+     * gRPC 通道管理器
+     */
     protected final GrpcChannelManager grpcChannelManager;
 
+    /**
+     * 构造抽象活动基类
+     *
+     * @param messagingProcessor 消息处理器
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     */
     public AbstractMessingActivity(MessagingProcessor messagingProcessor,
         GrpcClientSettingsManager grpcClientSettingsManager, GrpcChannelManager grpcChannelManager) {
         this.messagingProcessor = messagingProcessor;
@@ -38,22 +60,49 @@ public abstract class AbstractMessingActivity {
         this.grpcChannelManager = grpcChannelManager;
     }
 
+    /**
+     * 校验主题资源合法性
+     *
+     * @param topic 主题资源
+     */
     protected void validateTopic(Resource topic) {
         GrpcValidator.getInstance().validateTopic(topic);
     }
 
+    /**
+     * 校验消费组资源合法性
+     *
+     * @param consumerGroup 消费组资源
+     */
     protected void validateConsumerGroup(Resource consumerGroup) {
         GrpcValidator.getInstance().validateConsumerGroup(consumerGroup);
     }
 
+    /**
+     * 同时校验主题与消费组资源合法性
+     *
+     * @param topic 主题资源
+     * @param consumerGroup 消费组资源
+     */
     protected void validateTopicAndConsumerGroup(Resource topic, Resource consumerGroup) {
         GrpcValidator.getInstance().validateTopicAndConsumerGroup(topic, consumerGroup);
     }
 
+    /**
+     * 校验不可见时长是否合法
+     *
+     * @param invisibleTime 不可见时长
+     */
     protected void validateInvisibleTime(long invisibleTime) {
         GrpcValidator.getInstance().validateInvisibleTime(invisibleTime);
     }
 
+    /**
+     * 按最小阈值校验不可见时长是否合法
+     *
+     * @param invisibleTime 不可见时长
+     * @param minInvisibleTime 最小不可见时长
+     */
     protected void validateInvisibleTime(long invisibleTime, long minInvisibleTime) {
         GrpcValidator.getInstance().validateInvisibleTime(invisibleTime, minInvisibleTime);
     }

@@ -16,18 +16,45 @@
  */
 package org.apache.rocketmq.remoting.proxy;
 
+/**
+ * SOCKS 代理配置对象
+ */
 public class SocksProxyConfig {
+    /**
+     * 代理地址
+     */
     private String addr;
+    /**
+     * 认证用户名
+     */
     private String username;
+    /**
+     * 认证密码
+     */
     private String password;
 
+    /**
+     * 构造空代理配置
+     */
     public SocksProxyConfig() {
     }
 
+    /**
+     * 按地址构造代理配置
+     *
+     * @param addr 代理地址
+     */
     public SocksProxyConfig(String addr) {
         this.addr = addr;
     }
 
+    /**
+     * 按地址和认证信息构造代理配置
+     *
+     * @param addr 代理地址
+     * @param username 认证用户名
+     * @param password 认证密码
+     */
     public SocksProxyConfig(String addr, String username, String password) {
         this.addr = addr;
         this.username = username;
@@ -58,6 +85,11 @@ public class SocksProxyConfig {
         this.password = password;
     }
 
+    /**
+     * 输出代理配置字符串
+     *
+     * @return 可读字符串
+     */
     @Override
     public String toString() {
         return String.format("SocksProxy address: %s, username: %s, password: %s", addr, username, password);

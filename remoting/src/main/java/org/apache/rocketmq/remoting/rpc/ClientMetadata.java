@@ -16,12 +16,6 @@
  */
 package org.apache.rocketmq.remoting.rpc;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.common.message.MessageQueue;
@@ -33,16 +27,48 @@ import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 import org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo;
 import org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingUtils;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
+/**
+ * 客户端元数据缓存<br>
+ * 维护主题路由 逻辑队列端点与 broker 地址信息
+ */
 public class ClientMetadata {
+    /**
+     * 通用日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.COMMON_LOGGER_NAME);
 
+    /**
+     * Topic 到路由数据映射
+     */
     private final ConcurrentMap<String/* Topic */, TopicRouteData> topicRouteTable = new ConcurrentHashMap<>();
+    /**
+     * Topic 到逻辑队列端点映射
+     */
     private final ConcurrentMap<String/* Topic */, ConcurrentMap<MessageQueue, String/*brokerName*/>> topicEndPointsTable = new ConcurrentHashMap<>();
+    /**
+     * Broker 名称到地址映射
+     */
     private final ConcurrentMap<String/* Broker Name */, HashMap<Long/* brokerId */, String/* address */>> brokerAddrTable =
         new ConcurrentHashMap<>();
+    /**
+     * Broker 名称到地址版本映射
+     */
     private final ConcurrentMap<String/* Broker Name */, HashMap<String/* address */, Integer>> brokerVersionTable =
         new ConcurrentHashMap<>();
 
+    /**
+     * 刷新指定主题路由信息
+     *
+     * @param topic 主题名称
+     * @param topicRouteData 路由数据
+     */
     public void freshTopicRoute(String topic, TopicRouteData topicRouteData) {
         if (topic == null
             || topicRouteData == null) {
@@ -74,6 +100,11 @@ public class ClientMetadata {
         return mq.getBrokerName();
     }
 
+    /**
+     * 刷新集群 broker 地址信息
+     *
+     * @param clusterInfo 集群信息
+     */
     public void refreshClusterInfo(ClusterInfo clusterInfo) {
         if (clusterInfo == null
             || clusterInfo.getBrokerAddrTable() == null) {
@@ -84,6 +115,12 @@ public class ClientMetadata {
         }
     }
 
+    /**
+     * 查询 master broker 地址
+     *
+     * @param brokerName broker 名称
+     * @return master broker 地址
+     */
     public String findMasterBrokerAddr(String brokerName) {
         if (!brokerAddrTable.containsKey(brokerName)) {
             return null;
@@ -95,6 +132,13 @@ public class ClientMetadata {
         return brokerAddrTable;
     }
 
+    /**
+     * 将静态主题路由转换为逻辑队列端点映射
+     *
+     * @param topic 主题名称
+     * @param route 主题路由
+     * @return 逻辑队列到 broker 名称映射
+     */
     public static ConcurrentMap<MessageQueue, String> topicRouteData2EndpointsForStaticTopic(final String topic, final TopicRouteData route) {
         if (route.getTopicQueueMappingByBroker() == null
                 || route.getTopicQueueMappingByBroker().isEmpty()) {
@@ -102,6 +146,7 @@ public class ClientMetadata {
         }
         ConcurrentMap<MessageQueue, String> mqEndPointsOfBroker = new ConcurrentHashMap<>();
 
+        // 按作用域聚合映射信息
         Map<String, Map<String, TopicQueueMappingInfo>> mappingInfosByScope = new HashMap<>();
         for (Map.Entry<String, TopicQueueMappingInfo> entry : route.getTopicQueueMappingByBroker().entrySet()) {
             TopicQueueMappingInfo info = entry.getValue();
@@ -114,6 +159,7 @@ public class ClientMetadata {
             }
         }
 
+        // 对每个作用域计算逻辑队列最终端点
         for (Map.Entry<String, Map<String, TopicQueueMappingInfo>> mapEntry : mappingInfosByScope.entrySet()) {
             String scope = mapEntry.getKey();
             Map<String, TopicQueueMappingInfo> topicQueueMappingInfoMap =  mapEntry.getValue();
@@ -137,8 +183,8 @@ public class ClientMetadata {
                 }
             }
 
-
             //accomplish the static logic queues
+            // 补齐缺失的逻辑队列
             for (int i = 0; i < maxTotalNums; i++) {
                 MessageQueue mq = new MessageQueue(topic, TopicQueueMappingUtils.getMockBrokerName(scope), i);
                 if (!mqEndPoints.containsKey(mq)) {

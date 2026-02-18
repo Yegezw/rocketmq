@@ -39,13 +39,34 @@ import org.apache.rocketmq.proxy.grpc.v2.common.ResponseBuilder;
 import org.apache.rocketmq.proxy.grpc.v2.common.ResponseWriter;
 import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 
+/**
+ * 接收消息响应流写入器
+ */
 public class ReceiveMessageResponseStreamWriter {
+    /**
+     * Proxy 日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * 写流异常时回退的 nack 不可见时长
+     */
     protected static final long NACK_INVISIBLE_TIME = Duration.ofSeconds(1).toMillis();
 
+    /**
+     * 消息处理器
+     */
     protected final MessagingProcessor messagingProcessor;
+    /**
+     * 响应流观察者
+     */
     protected final StreamObserver<ReceiveMessageResponse> streamObserver;
 
+    /**
+     * 构造响应流写入器
+     *
+     * @param messagingProcessor 消息处理器
+     * @param observer 响应流观察者
+     */
     public ReceiveMessageResponseStreamWriter(
         MessagingProcessor messagingProcessor,
         StreamObserver<ReceiveMessageResponse> observer) {
@@ -53,6 +74,13 @@ public class ReceiveMessageResponseStreamWriter {
         this.streamObserver = observer;
     }
 
+    /**
+     * 按 POP 结果写出响应并结束流
+     *
+     * @param ctx Proxy 上下文
+     * @param request 接收消息请求
+     * @param popResult POP 结果
+     */
     public void writeAndComplete(ProxyContext ctx, ReceiveMessageRequest request, PopResult popResult) {
         PopStatus status = popResult.getPopStatus();
         List<MessageExt> messageFoundList = popResult.getMsgFoundList();
@@ -105,10 +133,24 @@ public class ReceiveMessageResponseStreamWriter {
         }
     }
 
+    /**
+     * 将内部消息对象转换为 gRPC 消息
+     *
+     * @param messageExt 内部消息对象
+     * @return gRPC 消息对象
+     */
     protected Message convertToMessage(MessageExt messageExt) {
         return GrpcConverter.getInstance().buildMessage(messageExt);
     }
 
+    /**
+     * 写流异常时回退修改消息不可见时长
+     *
+     * @param throwable 异常对象
+     * @param ctx Proxy 上下文
+     * @param request 接收消息请求
+     * @param messageExt 内部消息对象
+     */
     protected void processThrowableWhenWriteMessage(Throwable throwable,
         ProxyContext ctx, ReceiveMessageRequest request, MessageExt messageExt) {
 
@@ -127,18 +169,37 @@ public class ReceiveMessageResponseStreamWriter {
         );
     }
 
+    /**
+     * 按状态码写出响应并结束流
+     *
+     * @param ctx Proxy 上下文
+     * @param code 响应状态码
+     * @param message 响应说明
+     */
     public void writeAndComplete(ProxyContext ctx, Code code, String message) {
         writeResponseWithErrorIgnore(
             ReceiveMessageResponse.newBuilder().setStatus(ResponseBuilder.getInstance().buildStatus(code, message)).build());
         onComplete();
     }
 
+    /**
+     * 按异常写出响应并结束流
+     *
+     * @param ctx Proxy 上下文
+     * @param request 接收消息请求
+     * @param throwable 异常对象
+     */
     public void writeAndComplete(ProxyContext ctx, ReceiveMessageRequest request, Throwable throwable) {
         writeResponseWithErrorIgnore(
             ReceiveMessageResponse.newBuilder().setStatus(ResponseBuilder.getInstance().buildStatus(throwable)).build());
         onComplete();
     }
 
+    /**
+     * 写出响应并忽略写流异常
+     *
+     * @param response 响应对象
+     */
     protected void writeResponseWithErrorIgnore(ReceiveMessageResponse response) {
         try {
             ResponseWriter.getInstance().writeResponse(streamObserver, response);
@@ -147,6 +208,9 @@ public class ReceiveMessageResponseStreamWriter {
         }
     }
 
+    /**
+     * 写入结束信号并关闭响应流
+     */
     protected void onComplete() {
         writeResponseWithErrorIgnore(ReceiveMessageResponse.newBuilder()
             .setDeliveryTimestamp(Timestamps.fromMillis(System.currentTimeMillis()))

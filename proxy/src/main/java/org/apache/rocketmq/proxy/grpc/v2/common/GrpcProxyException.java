@@ -17,16 +17,30 @@
 package org.apache.rocketmq.proxy.grpc.v2.common;
 
 import apache.rocketmq.v2.Code;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.apache.rocketmq.proxy.common.ProxyException;
 import org.apache.rocketmq.proxy.common.ProxyExceptionCode;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * gRPC 层异常类型<br>
+ * 用于将 Proxy 内部异常映射为 gRPC 状态码
+ */
 public class GrpcProxyException extends RuntimeException {
 
+    /**
+     * Proxy 内部异常对象
+     */
     private ProxyException proxyException;
+    /**
+     * gRPC 状态码
+     */
     private Code code;
 
+    /**
+     * Proxy 异常码到 gRPC 状态码的映射表
+     */
     protected static final Map<ProxyExceptionCode, Code> CODE_MAPPING = new ConcurrentHashMap<>();
 
     static {
@@ -37,16 +51,34 @@ public class GrpcProxyException extends RuntimeException {
         CODE_MAPPING.put(ProxyExceptionCode.MESSAGE_PROPERTY_CONFLICT_WITH_TYPE, Code.MESSAGE_PROPERTY_CONFLICT_WITH_TYPE);
     }
 
+    /**
+     * 按 gRPC 状态码构造异常
+     *
+     * @param code gRPC 状态码
+     * @param message 异常消息
+     */
     public GrpcProxyException(Code code, String message) {
         super(message);
         this.code = code;
     }
 
+    /**
+     * 按 gRPC 状态码和根因构造异常
+     *
+     * @param code gRPC 状态码
+     * @param message 异常消息
+     * @param t 根因异常
+     */
     public GrpcProxyException(Code code, String message, Throwable t) {
         super(message, t);
         this.code = code;
     }
 
+    /**
+     * 按 Proxy 内部异常构造 gRPC 异常
+     *
+     * @param proxyException Proxy 内部异常
+     */
     public GrpcProxyException(ProxyException proxyException) {
         super(proxyException);
         this.proxyException = proxyException;

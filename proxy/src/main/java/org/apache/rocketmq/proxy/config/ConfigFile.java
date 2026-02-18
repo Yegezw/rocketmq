@@ -17,7 +17,13 @@
 
 package org.apache.rocketmq.proxy.config;
 
+/**
+ * 配置文件初始化接口
+ */
 public interface ConfigFile {
 
+    /**
+     * 初始化配置对象中的派生数据
+     */
     void initData();
 }

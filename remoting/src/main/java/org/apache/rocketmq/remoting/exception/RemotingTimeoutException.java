@@ -16,18 +16,42 @@
  */
 package org.apache.rocketmq.remoting.exception;
 
+/**
+ * remoting 请求超时异常
+ */
 public class RemotingTimeoutException extends RemotingException {
 
+    /**
+     * 序列化版本号
+     */
     private static final long serialVersionUID = 4106899185095245979L;
 
+    /**
+     * 按异常消息构造超时异常
+     *
+     * @param message 异常消息
+     */
     public RemotingTimeoutException(String message) {
         super(message);
     }
 
+    /**
+     * 按地址和超时时间构造超时异常
+     *
+     * @param addr 目标地址
+     * @param timeoutMillis 超时时间 毫秒
+     */
     public RemotingTimeoutException(String addr, long timeoutMillis) {
         this(addr, timeoutMillis, null);
     }
 
+    /**
+     * 按地址 超时时间和根因构造超时异常
+     *
+     * @param addr 目标地址
+     * @param timeoutMillis 超时时间 毫秒
+     * @param cause 根因异常
+     */
     public RemotingTimeoutException(String addr, long timeoutMillis, Throwable cause) {
         super("wait response on the channel <" + addr + "> timeout, " + timeoutMillis + "(ms)", cause);
     }

@@ -16,18 +16,51 @@
  */
 package org.apache.rocketmq.common.constant;
 
+/**
+ * 权限位定义与权限判定工具
+ */
 public class PermName {
+    /**
+     * 优先级权限位索引
+     */
     public static final int INDEX_PERM_PRIORITY = 3;
+    /**
+     * 读权限位索引
+     */
     public static final int INDEX_PERM_READ = 2;
+    /**
+     * 写权限位索引
+     */
     public static final int INDEX_PERM_WRITE = 1;
+    /**
+     * 继承权限位索引
+     */
     public static final int INDEX_PERM_INHERIT = 0;
 
 
+    /**
+     * 优先级权限掩码
+     */
     public static final int PERM_PRIORITY = 0x1 << INDEX_PERM_PRIORITY;
+    /**
+     * 读权限掩码
+     */
     public static final int PERM_READ = 0x1 << INDEX_PERM_READ;
+    /**
+     * 写权限掩码
+     */
     public static final int PERM_WRITE = 0x1 << INDEX_PERM_WRITE;
+    /**
+     * 继承权限掩码
+     */
     public static final int PERM_INHERIT = 0x1 << INDEX_PERM_INHERIT;
 
+    /**
+     * 将权限位转换为 RWX 字符串
+     *
+     * @param perm 权限位值
+     * @return 权限字符串
+     */
     public static String perm2String(final int perm) {
         final StringBuilder sb = new StringBuilder("---");
         if (isReadable(perm)) {

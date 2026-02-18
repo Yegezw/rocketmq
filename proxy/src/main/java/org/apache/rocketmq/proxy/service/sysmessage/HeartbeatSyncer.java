@@ -47,13 +47,37 @@ import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
+/**
+ * 消费者心跳同步器, 负责在 Proxy 集群间同步客户端注册状态
+ */
 public class HeartbeatSyncer extends AbstractSystemMessageSyncer {
 
+    /**
+     * 心跳同步任务线程池
+     */
     protected ThreadPoolExecutor threadPoolExecutor;
+    /**
+     * 消费者管理器
+     */
     protected ConsumerManager consumerManager;
+    /**
+     * 远程通道缓存, key: group@channelId
+     */
     protected final Map<String /* group @ channelId as longText */, RemoteChannel> remoteChannelMap = new ConcurrentHashMap<>();
+    /**
+     * 本地 Proxy 唯一标识
+     */
     protected String localProxyId;
 
+    /**
+     * 初始化心跳同步器
+     *
+     * @param topicRouteService 主题路由服务
+     * @param adminService 管理服务
+     * @param consumerManager 消费者管理器
+     * @param mqClientAPIFactory MQ 客户端工厂
+     * @param rpcHook 远程调用钩子
+     */
     public HeartbeatSyncer(TopicRouteService topicRouteService, AdminService adminService,
                            ConsumerManager consumerManager, MQClientAPIFactory mqClientAPIFactory, RPCHook rpcHook) {
         super(topicRouteService, adminService, mqClientAPIFactory, rpcHook);
@@ -62,6 +86,9 @@ public class HeartbeatSyncer extends AbstractSystemMessageSyncer {
         this.init();
     }
 
+    /**
+     * 初始化线程池与消费者事件监听器
+     */
     protected void init() {
         ProxyConfig proxyConfig = ConfigurationManager.getProxyConfig();
         this.threadPoolExecutor = ThreadPoolMonitor.createAndMonitor(
@@ -73,11 +100,21 @@ public class HeartbeatSyncer extends AbstractSystemMessageSyncer {
             proxyConfig.getHeartbeatSyncerThreadPoolQueueCapacity()
         );
         this.consumerManager.appendConsumerIdsChangeListener(new ConsumerIdsChangeListener() {
+            /**
+             * 处理消费者组变更事件
+             *
+             * @param event 事件类型
+             * @param group 消费者组
+             * @param args 附加参数
+             */
             @Override
             public void handle(ConsumerGroupEvent event, String group, Object... args) {
                 processConsumerGroupEvent(event, group, args);
             }
 
+            /**
+             * 监听器关闭回调, 当前无需额外处理
+             */
             @Override
             public void shutdown() {
 
@@ -85,12 +122,24 @@ public class HeartbeatSyncer extends AbstractSystemMessageSyncer {
         });
     }
 
+    /**
+     * 停止心跳同步器并释放线程池
+     *
+     * @throws Exception 停止异常
+     */
     @Override
     public void shutdown() throws Exception {
         this.threadPoolExecutor.shutdown();
         super.shutdown();
     }
 
+    /**
+     * 处理消费者组事件, 在客户端注销时清理远程通道缓存
+     *
+     * @param event 消费者组事件
+     * @param group 消费者组
+     * @param args 附加参数
+     */
     protected void processConsumerGroupEvent(ConsumerGroupEvent event, String group, Object... args) {
         if (event == ConsumerGroupEvent.CLIENT_UNREGISTER) {
             if (args == null || args.length < 1) {
@@ -103,6 +152,16 @@ public class HeartbeatSyncer extends AbstractSystemMessageSyncer {
         }
     }
 
+    /**
+     * 在本地消费者注册时广播注册心跳
+     *
+     * @param consumerGroup 消费者组
+     * @param clientChannelInfo 客户端通道信息
+     * @param consumeType 消费类型
+     * @param messageModel 消息模型
+     * @param consumeFromWhere 消费起始位置
+     * @param subList 订阅列表
+     */
     public void onConsumerRegister(String consumerGroup, ClientChannelInfo clientChannelInfo,
         ConsumeType consumeType, MessageModel messageModel, ConsumeFromWhere consumeFromWhere,
         Set<SubscriptionData> subList) {
@@ -143,6 +202,12 @@ public class HeartbeatSyncer extends AbstractSystemMessageSyncer {
         }
     }
 
+    /**
+     * 在本地消费者注销时广播注销心跳
+     *
+     * @param consumerGroup 消费者组
+     * @param clientChannelInfo 客户端通道信息
+     */
     public void onConsumerUnRegister(String consumerGroup, ClientChannelInfo clientChannelInfo) {
         if (clientChannelInfo == null || ChannelHelper.isRemote(clientChannelInfo.getChannel())) {
             return;
@@ -180,6 +245,13 @@ public class HeartbeatSyncer extends AbstractSystemMessageSyncer {
         }
     }
 
+    /**
+     * 消费心跳广播消息并在本地更新消费者连接状态
+     *
+     * @param msgs 消息列表
+     * @param context 消费上下文
+     * @return 消费结果
+     */
     @Override
     public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> msgs, ConsumeConcurrentlyContext context) {
         if (msgs == null || msgs.isEmpty()) {
@@ -228,12 +300,25 @@ public class HeartbeatSyncer extends AbstractSystemMessageSyncer {
         return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
     }
 
+    /**
+     * 构建本地 Proxy 唯一标识
+     *
+     * @return 本地 Proxy 标识
+     */
     private String buildLocalProxyId() {
         ProxyConfig proxyConfig = ConfigurationManager.getProxyConfig();
         // use local address, remoting port and grpc port to build unique local proxy Id
+        // 使用本地地址, remoting 端口与 grpc 端口构建本地 Proxy 唯一标识
         return proxyConfig.getLocalServeAddr() + "%" + proxyConfig.getRemotingListenPort() + "%" + proxyConfig.getGrpcServerPort();
     }
 
+    /**
+     * 构造远程通道缓存 key
+     *
+     * @param group 消费者组
+     * @param channel 客户端通道
+     * @return 缓存 key
+     */
     private static String buildKey(String group, Channel channel) {
         return group + "@" + channel.id().asLongText();
     }

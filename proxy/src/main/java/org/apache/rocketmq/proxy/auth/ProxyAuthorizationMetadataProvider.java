@@ -16,21 +16,38 @@
  */
 package org.apache.rocketmq.proxy.auth;
 
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
 import org.apache.rocketmq.auth.authentication.model.Subject;
-import org.apache.rocketmq.auth.authorization.provider.AuthorizationMetadataProvider;
 import org.apache.rocketmq.auth.authorization.model.Acl;
+import org.apache.rocketmq.auth.authorization.provider.AuthorizationMetadataProvider;
 import org.apache.rocketmq.auth.config.AuthConfig;
 import org.apache.rocketmq.proxy.service.metadata.MetadataService;
 
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+
+/**
+ * Proxy 鉴权授权元数据提供者<br>
+ * 负责对接 MetadataService 提供 ACL 元数据访问
+ */
 public class ProxyAuthorizationMetadataProvider implements AuthorizationMetadataProvider {
 
+    /**
+     * 认证配置对象
+     */
     protected AuthConfig authConfig;
 
+    /**
+     * 元数据服务
+     */
     protected MetadataService metadataService;
 
+    /**
+     * 初始化授权元数据提供者
+     *
+     * @param authConfig 认证配置
+     * @param metadataService 元数据服务提供器
+     */
     @Override
     public void initialize(AuthConfig authConfig, Supplier<?> metadataService) {
         this.authConfig = authConfig;
@@ -39,21 +56,42 @@ public class ProxyAuthorizationMetadataProvider implements AuthorizationMetadata
         }
     }
 
+    /**
+     * 关闭提供者并释放资源
+     */
     @Override
     public void shutdown() {
 
     }
 
+    /**
+     * 创建 ACL
+     *
+     * @param acl ACL 对象
+     * @return 异步结果
+     */
     @Override
     public CompletableFuture<Void> createAcl(Acl acl) {
         return null;
     }
 
+    /**
+     * 删除 ACL
+     *
+     * @param subject 授权主体
+     * @return 异步结果
+     */
     @Override
     public CompletableFuture<Void> deleteAcl(Subject subject) {
         return null;
     }
 
+    /**
+     * 更新 ACL
+     *
+     * @param acl ACL 对象
+     * @return 异步结果
+     */
     @Override
     public CompletableFuture<Void> updateAcl(Acl acl) {
         return null;
@@ -64,6 +102,13 @@ public class ProxyAuthorizationMetadataProvider implements AuthorizationMetadata
         return this.metadataService.getAcl(null, subject);
     }
 
+    /**
+     * 按过滤条件列出 ACL
+     *
+     * @param subjectFilter 主体过滤条件
+     * @param resourceFilter 资源过滤条件
+     * @return ACL 列表异步结果
+     */
     @Override
     public CompletableFuture<List<Acl>> listAcl(String subjectFilter, String resourceFilter) {
         return null;

@@ -22,14 +22,34 @@ import org.apache.rocketmq.proxy.common.utils.FilterUtils;
 import org.apache.rocketmq.proxy.processor.PopMessageResultFilter;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
+/**
+ * POP 消息结果过滤器实现
+ */
 public class PopMessageResultFilterImpl implements PopMessageResultFilter {
 
+    /**
+     * 允许的最大重试次数
+     */
     private final int maxAttempts;
 
+    /**
+     * 构造 POP 结果过滤器
+     *
+     * @param maxAttempts 最大重试次数
+     */
     public PopMessageResultFilterImpl(int maxAttempts) {
         this.maxAttempts = maxAttempts;
     }
 
+    /**
+     * 按 tag 与重试次数过滤消息
+     *
+     * @param ctx Proxy 上下文
+     * @param consumerGroup 消费组
+     * @param subscriptionData 订阅数据
+     * @param messageExt 消息对象
+     * @return 过滤结果
+     */
     @Override
     public FilterResult filterMessage(ProxyContext ctx, String consumerGroup, SubscriptionData subscriptionData,
         MessageExt messageExt) {

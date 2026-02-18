@@ -19,11 +19,32 @@ package org.apache.rocketmq.common.thread;
 
 import java.util.concurrent.ThreadPoolExecutor;
 
+/**
+ * 线程池状态监控器接口
+ */
 public interface ThreadPoolStatusMonitor {
 
+    /**
+     * 返回监控项描述名称
+     *
+     * @return 监控项名称
+     */
     String describe();
 
+    /**
+     * 计算当前监控值
+     *
+     * @param executor 线程池执行器
+     * @return 监控值
+     */
     double value(ThreadPoolExecutor executor);
 
+    /**
+     * 根据监控值判断是否需要打印线程栈
+     *
+     * @param executor 线程池执行器
+     * @param value 当前监控值
+     * @return 是否打印线程栈
+     */
     boolean needPrintJstack(ThreadPoolExecutor executor, double value);
 }

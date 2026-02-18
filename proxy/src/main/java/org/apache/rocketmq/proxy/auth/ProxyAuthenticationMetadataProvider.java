@@ -16,19 +16,36 @@
  */
 package org.apache.rocketmq.proxy.auth;
 
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
-import org.apache.rocketmq.auth.authentication.provider.AuthenticationMetadataProvider;
 import org.apache.rocketmq.auth.authentication.model.User;
+import org.apache.rocketmq.auth.authentication.provider.AuthenticationMetadataProvider;
 import org.apache.rocketmq.auth.config.AuthConfig;
 import org.apache.rocketmq.proxy.service.metadata.MetadataService;
 
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+
+/**
+ * Proxy 鉴权元数据提供者<br>
+ * 负责对接 MetadataService 提供认证相关元数据访问
+ */
 public class ProxyAuthenticationMetadataProvider implements AuthenticationMetadataProvider {
 
+    /**
+     * 认证配置对象
+     */
     protected AuthConfig authConfig;
+    /**
+     * 元数据服务
+     */
     protected MetadataService metadataService;
 
+    /**
+     * 初始化鉴权元数据提供者
+     *
+     * @param authConfig 认证配置
+     * @param metadataService 元数据服务提供器
+     */
     @Override
     public void initialize(AuthConfig authConfig, Supplier<?> metadataService) {
         this.authConfig = authConfig;
@@ -37,21 +54,42 @@ public class ProxyAuthenticationMetadataProvider implements AuthenticationMetada
         }
     }
 
+    /**
+     * 关闭提供者并释放资源
+     */
     @Override
     public void shutdown() {
 
     }
 
+    /**
+     * 创建用户
+     *
+     * @param user 用户对象
+     * @return 异步结果
+     */
     @Override
     public CompletableFuture<Void> createUser(User user) {
         return null;
     }
 
+    /**
+     * 删除用户
+     *
+     * @param username 用户名
+     * @return 异步结果
+     */
     @Override
     public CompletableFuture<Void> deleteUser(String username) {
         return null;
     }
 
+    /**
+     * 更新用户
+     *
+     * @param user 用户对象
+     * @return 异步结果
+     */
     @Override
     public CompletableFuture<Void> updateUser(User user) {
         return null;
@@ -62,6 +100,12 @@ public class ProxyAuthenticationMetadataProvider implements AuthenticationMetada
         return this.metadataService.getUser(null, username);
     }
 
+    /**
+     * 按过滤条件列出用户
+     *
+     * @param filter 过滤条件
+     * @return 用户列表异步结果
+     */
     @Override
     public CompletableFuture<List<User>> listUser(String filter) {
         return null;

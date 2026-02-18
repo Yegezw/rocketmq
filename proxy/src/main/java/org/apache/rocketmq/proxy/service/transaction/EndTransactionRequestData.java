@@ -19,10 +19,25 @@ package org.apache.rocketmq.proxy.service.transaction;
 
 import org.apache.rocketmq.remoting.protocol.header.EndTransactionRequestHeader;
 
+/**
+ * 结束事务请求所需的数据封装
+ */
 public class EndTransactionRequestData {
+    /**
+     * 目标 Broker 名称
+     */
     private String brokerName;
+    /**
+     * 结束事务请求头
+     */
     private EndTransactionRequestHeader requestHeader;
 
+    /**
+     * 初始化结束事务请求数据
+     *
+     * @param brokerName Broker 名称
+     * @param requestHeader 结束事务请求头
+     */
     public EndTransactionRequestData(String brokerName, EndTransactionRequestHeader requestHeader) {
         this.brokerName = brokerName;
         this.requestHeader = requestHeader;

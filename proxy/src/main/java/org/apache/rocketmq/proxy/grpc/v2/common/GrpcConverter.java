@@ -17,24 +17,9 @@
 
 package org.apache.rocketmq.proxy.grpc.v2.common;
 
-import apache.rocketmq.v2.Broker;
-import apache.rocketmq.v2.DeadLetterQueue;
-import apache.rocketmq.v2.Digest;
-import apache.rocketmq.v2.DigestType;
-import apache.rocketmq.v2.Encoding;
-import apache.rocketmq.v2.FilterType;
-import apache.rocketmq.v2.Message;
-import apache.rocketmq.v2.MessageQueue;
-import apache.rocketmq.v2.MessageType;
-import apache.rocketmq.v2.Resource;
-import apache.rocketmq.v2.SystemProperties;
+import apache.rocketmq.v2.*;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.util.Timestamps;
-import java.net.SocketAddress;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.common.filter.ExpressionType;
@@ -47,10 +32,29 @@ import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.remoting.protocol.NamespaceUtil;
 
+import java.net.SocketAddress;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * gRPC 协议对象转换器<br>
+ * 负责将 RocketMQ 内部消息结构转换为 gRPC 协议结构
+ */
 public class GrpcConverter {
+    /**
+     * Proxy 日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
 
+    /**
+     * 单例创建锁
+     */
     protected static final Object INSTANCE_CREATE_LOCK = new Object();
+    /**
+     * 转换器单例
+     */
     protected static volatile GrpcConverter instance;
 
     public static GrpcConverter getInstance() {
@@ -64,6 +68,13 @@ public class GrpcConverter {
         return instance;
     }
 
+    /**
+     * 构造消息队列协议对象
+     *
+     * @param messageExt 内部消息对象
+     * @param brokerName broker 名称
+     * @return gRPC 消息队列对象
+     */
     public MessageQueue buildMessageQueue(MessageExt messageExt, String brokerName) {
         Broker broker = Broker.getDefaultInstance();
         if (!StringUtils.isEmpty(brokerName)) {
@@ -82,6 +93,12 @@ public class GrpcConverter {
             .build();
     }
 
+    /**
+     * 转换过滤表达式类型
+     *
+     * @param filterType gRPC 过滤类型
+     * @return RocketMQ 过滤类型字符串
+     */
     public String buildExpressionType(FilterType filterType) {
         switch (filterType) {
             case SQL:
@@ -92,6 +109,12 @@ public class GrpcConverter {
         }
     }
 
+    /**
+     * 构造 gRPC 消息对象
+     *
+     * @param messageExt 内部消息对象
+     * @return gRPC 消息对象
+     */
     public Message buildMessage(MessageExt messageExt) {
         Map<String, String> userProperties = buildUserAttributes(messageExt);
         SystemProperties systemProperties = buildSystemProperties(messageExt);
@@ -105,6 +128,12 @@ public class GrpcConverter {
             .build();
     }
 
+    /**
+     * 提取用户属性
+     *
+     * @param messageExt 内部消息对象
+     * @return 用户属性映射
+     */
     protected Map<String, String> buildUserAttributes(MessageExt messageExt) {
         Map<String, String> userAttributes = new HashMap<>();
         Map<String, String> properties = messageExt.getProperties();
@@ -118,16 +147,24 @@ public class GrpcConverter {
         return userAttributes;
     }
 
+    /**
+     * 构造系统属性
+     *
+     * @param messageExt 内部消息对象
+     * @return gRPC 系统属性
+     */
     protected SystemProperties buildSystemProperties(MessageExt messageExt) {
         SystemProperties.Builder systemPropertiesBuilder = SystemProperties.newBuilder();
 
         // tag
+        // 标签
         String tag = messageExt.getUserProperty(MessageConst.PROPERTY_TAGS);
         if (tag != null) {
             systemPropertiesBuilder.setTag(tag);
         }
 
         // keys
+        // 消息键集合
         String keys = messageExt.getKeys();
         if (keys != null) {
             String[] keysArray = keys.split(MessageConst.KEY_SEPARATOR);
@@ -135,6 +172,7 @@ public class GrpcConverter {
         }
 
         // message_id
+        // 消息 ID
         String uniqKey = messageExt.getProperty(MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX);
 
         if (uniqKey == null) {
@@ -146,6 +184,7 @@ public class GrpcConverter {
         }
 
         // body_digest & body_encoding
+        // 消息体摘要与编码
         String md5Result = BinaryUtil.generateMd5(messageExt.getBody());
         Digest digest = Digest.newBuilder()
             .setType(DigestType.MD5)
@@ -160,6 +199,7 @@ public class GrpcConverter {
         }
 
         // message_type
+        // 消息类型
         String isTrans = messageExt.getProperty(MessageConst.PROPERTY_TRANSACTION_PREPARED);
         String isTransValue = "true";
         if (isTransValue.equals(isTrans)) {
@@ -175,10 +215,12 @@ public class GrpcConverter {
         }
 
         // born_timestamp (millis)
+        // 消息产生时间戳 毫秒
         long bornTimestamp = messageExt.getBornTimestamp();
         systemPropertiesBuilder.setBornTimestamp(Timestamps.fromMillis(bornTimestamp));
 
         // born_host
+        // 消息产生主机
         String bornHostString = messageExt.getProperty(MessageConst.PROPERTY_BORN_HOST);
         if (StringUtils.isBlank(bornHostString)) {
             bornHostString = messageExt.getBornHostString();
@@ -188,16 +230,19 @@ public class GrpcConverter {
         }
 
         // store_timestamp (millis)
+        // 消息存储时间戳 毫秒
         long storeTimestamp = messageExt.getStoreTimestamp();
         systemPropertiesBuilder.setStoreTimestamp(Timestamps.fromMillis(storeTimestamp));
 
         // store_host
+        // 消息存储主机
         SocketAddress storeHost = messageExt.getStoreHost();
         if (storeHost != null) {
             systemPropertiesBuilder.setStoreHost(NetworkUtil.socketAddress2String(storeHost));
         }
 
         // delivery_timestamp
+        // 投递时间戳
         String deliverMsString;
         long deliverMs;
         if (messageExt.getProperty(MessageConst.PROPERTY_TIMER_DELAY_SEC) != null) {
@@ -213,27 +258,33 @@ public class GrpcConverter {
         }
 
         // sharding key
+        // 顺序消息分片键
         String shardingKey = messageExt.getProperty(MessageConst.PROPERTY_SHARDING_KEY);
         if (shardingKey != null) {
             systemPropertiesBuilder.setMessageGroup(shardingKey);
         }
 
         // receipt_handle && invisible_period
+        // 回执句柄与不可见期信息
         String handle = messageExt.getProperty(MessageConst.PROPERTY_POP_CK);
         if (handle != null) {
             systemPropertiesBuilder.setReceiptHandle(handle);
         }
 
         // partition_id
+        // 队列 ID
         systemPropertiesBuilder.setQueueId(messageExt.getQueueId());
 
         // partition_offset
+        // 队列偏移量
         systemPropertiesBuilder.setQueueOffset(messageExt.getQueueOffset());
 
         // delivery_attempt
+        // 投递次数
         systemPropertiesBuilder.setDeliveryAttempt(messageExt.getReconsumeTimes() + 1);
 
         // trace context
+        // 追踪上下文
         String traceContext = messageExt.getProperty(MessageConst.PROPERTY_TRACE_CONTEXT);
         if (traceContext != null) {
             systemPropertiesBuilder.setTraceContext(traceContext);
@@ -251,6 +302,12 @@ public class GrpcConverter {
         return systemPropertiesBuilder.build();
     }
 
+    /**
+     * 构造资源对象并拆分命名空间
+     *
+     * @param resourceNameWithNamespace 带命名空间的资源名
+     * @return gRPC 资源对象
+     */
     public Resource buildResource(String resourceNameWithNamespace) {
         return Resource.newBuilder()
             .setResourceNamespace(NamespaceUtil.getNamespaceFromResource(resourceNameWithNamespace))

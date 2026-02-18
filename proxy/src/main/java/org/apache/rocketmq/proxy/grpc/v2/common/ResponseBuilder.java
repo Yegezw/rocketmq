@@ -19,28 +19,45 @@ package org.apache.rocketmq.proxy.grpc.v2.common;
 
 import apache.rocketmq.v2.Code;
 import apache.rocketmq.v2.Status;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.apache.rocketmq.auth.authentication.exception.AuthenticationException;
 import org.apache.rocketmq.auth.authorization.exception.AuthorizationException;
 import org.apache.rocketmq.client.common.ClientErrorCode;
 import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.common.constant.LoggerName;
+import org.apache.rocketmq.common.utils.ExceptionUtils;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.proxy.common.ProxyException;
-import org.apache.rocketmq.common.utils.ExceptionUtils;
 import org.apache.rocketmq.proxy.service.route.TopicRouteHelper;
 import org.apache.rocketmq.remoting.exception.RemotingTimeoutException;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * gRPC 响应状态构建器<br>
+ * 负责将内部异常和响应码映射为统一 gRPC 状态
+ */
 public class ResponseBuilder {
 
+    /**
+     * Proxy 日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * Remoting 响应码到 gRPC 状态码的映射表
+     */
     protected static final Map<Integer, Code> RESPONSE_CODE_MAPPING = new ConcurrentHashMap<>();
 
+    /**
+     * 单例创建锁
+     */
     protected static final Object INSTANCE_CREATE_LOCK = new Object();
+    /**
+     * 构建器单例
+     */
     protected static volatile ResponseBuilder instance;
 
     static {
@@ -62,6 +79,12 @@ public class ResponseBuilder {
         return instance;
     }
 
+    /**
+     * 根据异常构造 gRPC 状态
+     *
+     * @param t 异常对象
+     * @return gRPC 状态
+     */
     public Status buildStatus(Throwable t) {
         t = ExceptionUtils.getRealException(t);
 
@@ -94,6 +117,13 @@ public class ResponseBuilder {
         return buildStatus(Code.INTERNAL_SERVER_ERROR, ExceptionUtils.getErrorDetailMessage(t));
     }
 
+    /**
+     * 根据状态码和消息构造 gRPC 状态
+     *
+     * @param code gRPC 状态码
+     * @param message 状态消息
+     * @return gRPC 状态
+     */
     public Status buildStatus(Code code, String message) {
         return Status.newBuilder()
             .setCode(code)
@@ -101,6 +131,13 @@ public class ResponseBuilder {
             .build();
     }
 
+    /**
+     * 根据 Remoting 响应码构造 gRPC 状态
+     *
+     * @param remotingResponseCode Remoting 响应码
+     * @param remark Remoting 响应说明
+     * @return gRPC 状态
+     */
     public Status buildStatus(int remotingResponseCode, String remark) {
         String message = remark;
         if (message == null) {
@@ -112,6 +149,12 @@ public class ResponseBuilder {
             .build();
     }
 
+    /**
+     * 将 Remoting 响应码映射为 gRPC 状态码
+     *
+     * @param remotingResponseCode Remoting 响应码
+     * @return gRPC 状态码
+     */
     public Code buildCode(int remotingResponseCode) {
         return RESPONSE_CODE_MAPPING.getOrDefault(remotingResponseCode, Code.INTERNAL_SERVER_ERROR);
     }

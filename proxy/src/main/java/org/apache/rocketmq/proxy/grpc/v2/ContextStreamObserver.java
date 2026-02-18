@@ -19,11 +19,30 @@ package org.apache.rocketmq.proxy.grpc.v2;
 
 import org.apache.rocketmq.proxy.common.ProxyContext;
 
+/**
+ * 带 ProxyContext 的流式观察者接口
+ *
+ * @param <V> 消息类型
+ */
 public interface ContextStreamObserver<V> {
 
+    /**
+     * 处理下一条消息
+     *
+     * @param ctx Proxy 上下文
+     * @param value 消息内容
+     */
     void onNext(ProxyContext ctx, V value);
 
+    /**
+     * 处理流式异常
+     *
+     * @param t 异常对象
+     */
     void onError(Throwable t);
 
+    /**
+     * 处理流式完成事件
+     */
     void onCompleted();
 }

@@ -17,25 +17,22 @@
 
 package org.apache.rocketmq.proxy.grpc.interceptor;
 
-import apache.rocketmq.v2.AckMessageRequest;
-import apache.rocketmq.v2.ChangeInvisibleDurationRequest;
-import apache.rocketmq.v2.EndTransactionRequest;
-import apache.rocketmq.v2.ForwardMessageToDeadLetterQueueResponse;
-import apache.rocketmq.v2.HeartbeatRequest;
-import apache.rocketmq.v2.NotifyClientTerminationRequest;
-import apache.rocketmq.v2.QueryAssignmentRequest;
-import apache.rocketmq.v2.QueryRouteRequest;
-import apache.rocketmq.v2.RecallMessageRequest;
-import apache.rocketmq.v2.ReceiveMessageRequest;
-import apache.rocketmq.v2.SendMessageRequest;
-import java.util.HashMap;
-import java.util.Map;
+import apache.rocketmq.v2.*;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * gRPC 请求类型到 remoting 请求码的映射表
+ */
 public class RequestMapping {
+    /**
+     * 请求全限定名与 RequestCode 的映射关系
+     */
     private final static Map<String, Integer> REQUEST_MAP = new HashMap<String, Integer>() {
         {
-            // v2
+            // v2 协议请求映射
             put(QueryRouteRequest.getDescriptor().getFullName(), RequestCode.GET_ROUTEINFO_BY_TOPIC);
             put(HeartbeatRequest.getDescriptor().getFullName(), RequestCode.HEART_BEAT);
             put(SendMessageRequest.getDescriptor().getFullName(), RequestCode.SEND_MESSAGE_V2);
@@ -50,6 +47,12 @@ public class RequestMapping {
         }
     };
 
+    /**
+     * 根据 gRPC 请求全限定名返回内部 remoting 请求码
+     *
+     * @param rpcFullName gRPC 请求全限定名
+     * @return 对应请求码, 未命中时返回 HEART_BEAT
+     */
     public static int map(String rpcFullName) {
         if (REQUEST_MAP.containsKey(rpcFullName)) {
             return REQUEST_MAP.get(rpcFullName);

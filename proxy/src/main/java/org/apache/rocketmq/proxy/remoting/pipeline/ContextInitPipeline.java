@@ -27,8 +27,19 @@ import org.apache.rocketmq.remoting.netty.AttributeKeys;
 import org.apache.rocketmq.remoting.protocol.LanguageCode;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * Remoting 上下文初始化流水线, 从连接属性填充 ProxyContext
+ */
 public class ContextInitPipeline implements RequestPipeline {
 
+    /**
+     * 从 Netty 通道属性提取上下文信息并写入 ProxyContext
+     *
+     * @param ctx Netty 处理上下文
+     * @param request remoting 请求命令
+     * @param context Proxy 上下文
+     * @throws Exception 执行异常
+     */
     @Override
     public void execute(ChannelHandlerContext ctx, RemotingCommand request, ProxyContext context) throws Exception {
         Channel channel = ctx.channel();

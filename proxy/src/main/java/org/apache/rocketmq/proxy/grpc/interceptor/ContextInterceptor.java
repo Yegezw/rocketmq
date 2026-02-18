@@ -25,8 +25,19 @@ import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 import org.apache.rocketmq.common.constant.GrpcConstants;
 
+/**
+ * gRPC 服务端拦截器, 将本次调用元数据绑定到 Context
+ */
 public class ContextInterceptor implements ServerInterceptor {
 
+    /**
+     * 在调用进入业务处理器前写入 Metadata, 供下游组件读取链路头信息
+     *
+     * @param call 当前 RPC 调用
+     * @param headers 当前调用头信息
+     * @param next 下一个调用处理器
+     * @return 封装 Metadata 后的监听器
+     */
     @Override
     public <R, W> ServerCall.Listener<R> interceptCall(
         ServerCall<R, W> call,

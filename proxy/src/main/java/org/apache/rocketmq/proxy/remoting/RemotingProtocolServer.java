@@ -64,31 +64,107 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Remoting 协议服务端, 负责处理客户端请求并与 Nameserver、Broker 通信
+ */
 public class RemotingProtocolServer implements StartAndShutdown, RemotingProxyOutClient {
+    /**
+     * Remoting 协议服务日志记录器
+     */
     private final static Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
 
+    /**
+     * 消息处理核心组件
+     */
     protected final MessagingProcessor messagingProcessor;
+    /**
+     * Remoting 通道管理器
+     */
     protected final RemotingChannelManager remotingChannelManager;
+    /**
+     * 客户端事件监听服务
+     */
     protected final ChannelEventListener clientHousekeepingService;
+    /**
+     * 默认 Remoting 服务端实现
+     */
     protected final RemotingServer defaultRemotingServer;
+
+    /**
+     * 主题路由查询处理器
+     */
     protected final GetTopicRouteActivity getTopicRouteActivity;
+    /**
+     * 客户端管理处理器
+     */
     protected final ClientManagerActivity clientManagerActivity;
+    /**
+     * 消费者管理处理器
+     */
     protected final ConsumerManagerActivity consumerManagerActivity;
+    /**
+     * 发送消息处理器
+     */
     protected final SendMessageActivity sendMessageActivity;
+    /**
+     * 消息撤回处理器
+     */
     protected final RecallMessageActivity recallMessageActivity;
+    /**
+     * 事务消息处理器
+     */
     protected final TransactionActivity transactionActivity;
+    /**
+     * 拉消息处理器
+     */
     protected final PullMessageActivity pullMessageActivity;
+    /**
+     * POP 消息处理器
+     */
     protected final PopMessageActivity popMessageActivity;
+    /**
+     * ACK 处理器
+     */
     protected final AckMessageActivity ackMessageActivity;
+    /**
+     * 修改不可见时长处理器
+     */
     protected final ChangeInvisibleTimeActivity changeInvisibleTimeActivity;
+
+    /**
+     * 发送消息线程池 CPU * 4
+     */
     protected final ThreadPoolExecutor sendMessageExecutor;
+    /**
+     * 拉消息线程池 CPU * 4
+     */
     protected final ThreadPoolExecutor pullMessageExecutor;
+    /**
+     * 心跳线程池 CPU * 2
+     */
     protected final ThreadPoolExecutor heartbeatExecutor;
+    /**
+     * 位点更新线程池 CPU * 4
+     */
     protected final ThreadPoolExecutor updateOffsetExecutor;
+    /**
+     * 路由查询线程池 CPU * 2
+     */
     protected final ThreadPoolExecutor topicRouteExecutor;
+    /**
+     * 默认请求线程池 CPU * 4
+     */
     protected final ThreadPoolExecutor defaultExecutor;
+    /**
+     * 定时清理任务线程池 1
+     */
     protected final ScheduledExecutorService timerExecutor;
 
+    /**
+     * 构造 Remoting 协议服务, 初始化处理器与线程池
+     *
+     * @param messagingProcessor 消息处理核心组件
+     */
     public RemotingProtocolServer(MessagingProcessor messagingProcessor) {
         this.messagingProcessor = messagingProcessor;
         this.remotingChannelManager = new RemotingChannelManager(this, messagingProcessor.getProxyRelayService());
@@ -190,6 +266,11 @@ public class RemotingProtocolServer implements StartAndShutdown, RemotingProxyOu
         this.timerExecutor.scheduleAtFixedRate(this::cleanExpireRequest, 10, 10, TimeUnit.SECONDS);
     }
 
+    /**
+     * 注册 Remoting 请求码与对应处理器
+     *
+     * @param remotingServer Remoting 服务端
+     */
     protected void registerRemotingServer(RemotingServer remotingServer) {
         remotingServer.registerProcessor(RequestCode.SEND_MESSAGE, sendMessageActivity, this.sendMessageExecutor);
         remotingServer.registerProcessor(RequestCode.SEND_MESSAGE_V2, sendMessageActivity, this.sendMessageExecutor);
@@ -223,6 +304,11 @@ public class RemotingProtocolServer implements StartAndShutdown, RemotingProxyOu
         remotingServer.registerProcessor(RequestCode.GET_ROUTEINFO_BY_TOPIC, getTopicRouteActivity, this.topicRouteExecutor);
     }
 
+    /**
+     * 关闭 Remoting 服务与全部线程池资源
+     *
+     * @throws Exception 关闭异常
+     */
     @Override
     public void shutdown() throws Exception {
         this.defaultRemotingServer.shutdown();
@@ -235,28 +321,56 @@ public class RemotingProtocolServer implements StartAndShutdown, RemotingProxyOu
         this.defaultExecutor.shutdown();
     }
 
+    /**
+     * 启动 Remoting 通道管理与服务端监听
+     *
+     * @throws Exception 启动异常
+     */
     @Override
     public void start() throws Exception {
         this.remotingChannelManager.start();
         this.defaultRemotingServer.start();
     }
 
+    /**
+     * 向客户端异步透传请求并返回未来结果
+     *
+     * @param channel 客户端通道
+     * @param request 请求命令
+     * @param timeoutMillis 超时时间
+     * @return 异步响应结果
+     */
     @Override
     public CompletableFuture<RemotingCommand> invokeToClient(Channel channel, RemotingCommand request,
         long timeoutMillis) {
         CompletableFuture<RemotingCommand> future = new CompletableFuture<>();
         try {
             this.defaultRemotingServer.invokeAsync(channel, request, timeoutMillis, new InvokeCallback() {
+                /**
+                 * 回调完成通知, 当前无需额外处理
+                 *
+                 * @param responseFuture 响应 future
+                 */
                 @Override
                 public void operationComplete(ResponseFuture responseFuture) {
 
                 }
 
+                /**
+                 * 回调成功通知, 将结果传递给外层 future
+                 *
+                 * @param response 响应命令
+                 */
                 @Override
                 public void operationSucceed(RemotingCommand response) {
                     future.complete(response);
                 }
 
+                /**
+                 * 回调失败通知, 将异常传递给外层 future
+                 *
+                 * @param throwable 失败原因
+                 */
                 @Override
                 public void operationFail(Throwable throwable) {
                     future.completeExceptionally(throwable);
@@ -268,43 +382,86 @@ public class RemotingProtocolServer implements StartAndShutdown, RemotingProxyOu
         return future;
     }
 
+    /**
+     * 构建请求处理管道, 包含上下文初始化与鉴权能力
+     *
+     * @param messagingProcessor 消息处理核心组件
+     * @return 请求处理管道
+     */
     protected RequestPipeline createRequestPipeline(MessagingProcessor messagingProcessor) {
         RequestPipeline pipeline = (ctx, request, context) -> {
         };
         // add pipeline
         // the last pipe add will execute at the first
+        // 添加请求处理管道, 后追加的管线优先执行
         AuthConfig authConfig = ConfigurationManager.getAuthConfig();
         if (authConfig != null) {
-            pipeline = pipeline.pipe(new AuthorizationPipeline(authConfig, messagingProcessor))
-                .pipe(new AuthenticationPipeline(authConfig, messagingProcessor));
+            pipeline = pipeline
+                    .pipe(new AuthorizationPipeline(authConfig, messagingProcessor))
+                    .pipe(new AuthenticationPipeline(authConfig, messagingProcessor));
         }
         return pipeline.pipe(new ContextInitPipeline());
     }
 
+    /**
+     * 线程池队头慢请求监控器
+     */
     protected class ThreadPoolHeadSlowTimeMillsMonitor implements ThreadPoolStatusMonitor {
 
+        /**
+         * 队头任务最大等待阈值
+         */
         private final long maxWaitTimeMillsInQueue;
 
+        /**
+         * 构建监控器并设置阈值
+         *
+         * @param maxWaitTimeMillsInQueue 最大等待阈值
+         */
         public ThreadPoolHeadSlowTimeMillsMonitor(long maxWaitTimeMillsInQueue) {
             this.maxWaitTimeMillsInQueue = maxWaitTimeMillsInQueue;
         }
 
+        /**
+         * 返回监控指标名称
+         *
+         * @return 指标名称
+         */
         @Override
         public String describe() {
             return "headSlow";
         }
 
+        /**
+         * 计算当前线程池队头慢请求时长
+         *
+         * @param executor 线程池
+         * @return 慢请求时长
+         */
         @Override
         public double value(ThreadPoolExecutor executor) {
             return headSlowTimeMills(executor.getQueue());
         }
 
+        /**
+         * 判断是否需要打印线程堆栈
+         *
+         * @param executor 线程池
+         * @param value 当前指标值
+         * @return 是否打印线程堆栈
+         */
         @Override
         public boolean needPrintJstack(ThreadPoolExecutor executor, double value) {
             return value > maxWaitTimeMillsInQueue;
         }
     }
 
+    /**
+     * 计算队头任务等待时长
+     *
+     * @param q 任务队列
+     * @return 等待时长, 异常时返回 -1
+     */
     protected long headSlowTimeMills(BlockingQueue<Runnable> q) {
         try {
             long slowTimeMills = 0;
@@ -325,6 +482,9 @@ public class RemotingProtocolServer implements StartAndShutdown, RemotingProxyOu
         return -1;
     }
 
+    /**
+     * 清理各业务线程池中的超时请求
+     */
     protected void cleanExpireRequest() {
         ProxyConfig config = ConfigurationManager.getProxyConfig();
 
@@ -336,6 +496,12 @@ public class RemotingProtocolServer implements StartAndShutdown, RemotingProxyOu
         cleanExpiredRequestInQueue(this.defaultExecutor, config.getRemotingWaitTimeMillsInDefaultQueue());
     }
 
+    /**
+     * 清理指定线程池中等待超时的请求
+     *
+     * @param threadPoolExecutor 目标线程池
+     * @param maxWaitTimeMillsInQueue 最大等待阈值
+     */
     protected void cleanExpiredRequestInQueue(ThreadPoolExecutor threadPoolExecutor, long maxWaitTimeMillsInQueue) {
         while (true) {
             try {
@@ -368,6 +534,12 @@ public class RemotingProtocolServer implements StartAndShutdown, RemotingProxyOu
         }
     }
 
+    /**
+     * 将队列任务转换为 RequestTask
+     *
+     * @param runnable 队列任务
+     * @return RequestTask 或 null
+     */
     private RequestTask castRunnable(final Runnable runnable) {
         try {
             if (runnable instanceof FutureTaskExt) {

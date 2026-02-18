@@ -21,15 +21,50 @@ import com.google.common.base.MoreObjects;
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
 
+/**
+ * 事务回查所需的事务元数据
+ */
 public class TransactionData implements Comparable<TransactionData> {
+    /**
+     * 事务所属 Broker 名称
+     */
     private final String brokerName;
+    /**
+     * 事务消息主题
+     */
     private final String topic;
+    /**
+     * 事务状态表偏移量
+     */
     private final long tranStateTableOffset;
+    /**
+     * CommitLog 偏移量
+     */
     private final long commitLogOffset;
+    /**
+     * 事务标识
+     */
     private final String transactionId;
+    /**
+     * 记录时间戳
+     */
     private final long checkTimestamp;
+    /**
+     * 事务数据有效期, 单位毫秒
+     */
     private final long expireMs;
 
+    /**
+     * 初始化事务数据
+     *
+     * @param brokerName Broker 名称
+     * @param topic 主题
+     * @param tranStateTableOffset 事务状态表偏移量
+     * @param commitLogOffset CommitLog 偏移量
+     * @param transactionId 事务标识
+     * @param checkTimestamp 记录时间戳
+     * @param expireMs 有效期毫秒值
+     */
     public TransactionData(String brokerName, String topic, long tranStateTableOffset, long commitLogOffset, String transactionId,
         long checkTimestamp, long expireMs) {
         this.brokerName = brokerName;
@@ -73,6 +108,12 @@ public class TransactionData implements Comparable<TransactionData> {
         return checkTimestamp + expireMs;
     }
 
+    /**
+     * 基于关键事务字段判断对象相等
+     *
+     * @param o 比较对象
+     * @return 是否相等
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -87,11 +128,22 @@ public class TransactionData implements Comparable<TransactionData> {
             Objects.equal(transactionId, data.transactionId);
     }
 
+    /**
+     * 返回事务对象哈希值
+     *
+     * @return 哈希值
+     */
     @Override
     public int hashCode() {
         return Objects.hashCode(brokerName, transactionId, tranStateTableOffset, commitLogOffset, getExpireTime());
     }
 
+    /**
+     * 按过期时间与关键字段排序事务数据
+     *
+     * @param o 另一个事务数据
+     * @return 排序比较结果
+     */
     @Override
     public int compareTo(TransactionData o) {
         return ComparisonChain.start()
@@ -103,6 +155,11 @@ public class TransactionData implements Comparable<TransactionData> {
             .result();
     }
 
+    /**
+     * 构造事务数据字符串表示
+     *
+     * @return 字符串表示
+     */
     @Override
     public String toString() {
         return MoreObjects.toStringHelper(this)

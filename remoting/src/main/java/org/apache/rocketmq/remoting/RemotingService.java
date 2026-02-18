@@ -19,17 +19,33 @@ package org.apache.rocketmq.remoting;
 
 import org.apache.rocketmq.remoting.pipeline.RequestPipeline;
 
+/**
+ * remoting 服务基础接口<br>
+ * 定义服务生命周期与 RPC Hook 管理能力
+ */
 public interface RemotingService {
+    /**
+     * 启动 remoting 服务
+     */
     void start();
 
+    /**
+     * 关闭 remoting 服务
+     */
     void shutdown();
 
+    /**
+     * 注册 RPC Hook
+     *
+     * @param rpcHook RPC Hook 实例
+     */
     void registerRPCHook(RPCHook rpcHook);
 
     void setRequestPipeline(RequestPipeline pipeline);
 
     /**
-     * Remove all rpc hooks.
+     * Remove all rpc hooks.<br>
+     * 移除全部 RPC Hook
      */
     void clearRPCHook();
 }

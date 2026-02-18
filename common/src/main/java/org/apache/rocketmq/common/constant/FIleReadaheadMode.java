@@ -16,6 +16,12 @@
  */
 package org.apache.rocketmq.common.constant;
 
+/**
+ * 文件预读模式相关常量定义
+ */
 public class FIleReadaheadMode {
+    /**
+     * 预读模式配置项键名
+     */
     public static final String READ_AHEAD_MODE = "READ_AHEAD_MODE";
 }

@@ -41,13 +41,30 @@ import org.apache.rocketmq.proxy.processor.BatchAckResult;
 import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 import org.apache.rocketmq.proxy.service.message.ReceiptHandleMessage;
 
+/**
+ * Ack 消息活动实现, 支持批量与逐条 Ack
+ */
 public class AckMessageActivity extends AbstractMessingActivity {
 
+    /**
+     * 构造 Ack 消息活动对象
+     *
+     * @param messagingProcessor 消息处理器
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     */
     public AckMessageActivity(MessagingProcessor messagingProcessor, GrpcClientSettingsManager grpcClientSettingsManager,
         GrpcChannelManager grpcChannelManager) {
         super(messagingProcessor, grpcClientSettingsManager, grpcChannelManager);
     }
 
+    /**
+     * 处理 Ack 消息请求
+     *
+     * @param ctx Proxy 上下文
+     * @param request Ack 请求
+     * @return Ack 响应 Future
+     */
     public CompletableFuture<AckMessageResponse> ackMessage(ProxyContext ctx, AckMessageRequest request) {
         CompletableFuture<AckMessageResponse> future = new CompletableFuture<>();
 
@@ -66,6 +83,15 @@ public class AckMessageActivity extends AbstractMessingActivity {
         return future;
     }
 
+    /**
+     * 按批处理 Ack 请求
+     *
+     * @param ctx Proxy 上下文
+     * @param group 消费组
+     * @param topic 主题
+     * @param request Ack 请求
+     * @return Ack 响应 Future
+     */
     protected CompletableFuture<AckMessageResponse> ackMessageInBatch(ProxyContext ctx, String group, String topic, AckMessageRequest request) {
         List<ReceiptHandleMessage> handleMessageList = new ArrayList<>(request.getEntriesCount());
 
@@ -87,6 +113,12 @@ public class AckMessageActivity extends AbstractMessingActivity {
             });
     }
 
+    /**
+     * 将批量 Ack 结果转换为结果条目
+     *
+     * @param batchAckResult 批量 Ack 结果
+     * @return Ack 结果条目
+     */
     protected AckMessageResultEntry convertToAckMessageResultEntry(BatchAckResult batchAckResult) {
         ReceiptHandleMessage handleMessage = batchAckResult.getReceiptHandleMessage();
         AckMessageResultEntry.Builder resultBuilder = AckMessageResultEntry.newBuilder()
@@ -105,6 +137,15 @@ public class AckMessageActivity extends AbstractMessingActivity {
         return resultBuilder.build();
     }
 
+    /**
+     * 逐条处理 Ack 请求
+     *
+     * @param ctx Proxy 上下文
+     * @param group 消费组
+     * @param topic 主题
+     * @param request Ack 请求
+     * @return Ack 响应 Future
+     */
     protected CompletableFuture<AckMessageResponse> ackMessageOneByOne(ProxyContext ctx, String group, String topic, AckMessageRequest request) {
         CompletableFuture<AckMessageResponse> resultFuture = new CompletableFuture<>();
         CompletableFuture<AckMessageResultEntry>[] futures = new CompletableFuture[request.getEntriesCount()];
@@ -132,6 +173,16 @@ public class AckMessageActivity extends AbstractMessingActivity {
         return resultFuture;
     }
 
+    /**
+     * 处理单条 Ack 条目
+     *
+     * @param ctx Proxy 上下文
+     * @param group 消费组
+     * @param topic 主题
+     * @param request Ack 请求
+     * @param ackMessageEntry Ack 条目
+     * @return Ack 结果条目 Future
+     */
     protected CompletableFuture<AckMessageResultEntry> processAckMessage(ProxyContext ctx, String group, String topic, AckMessageRequest request,
         AckMessageEntry ackMessageEntry) {
         CompletableFuture<AckMessageResultEntry> future = new CompletableFuture<>();
@@ -157,6 +208,14 @@ public class AckMessageActivity extends AbstractMessingActivity {
         return future;
     }
 
+    /**
+     * 将异常转换为 Ack 结果条目
+     *
+     * @param ctx Proxy 上下文
+     * @param ackMessageEntry Ack 条目
+     * @param throwable 异常对象
+     * @return Ack 结果条目
+     */
     protected AckMessageResultEntry convertToAckMessageResultEntry(ProxyContext ctx, AckMessageEntry ackMessageEntry, Throwable throwable) {
         return AckMessageResultEntry.newBuilder()
             .setStatus(ResponseBuilder.getInstance().buildStatus(throwable))
@@ -165,6 +224,14 @@ public class AckMessageActivity extends AbstractMessingActivity {
             .build();
     }
 
+    /**
+     * 将 Ack 结果转换为 Ack 结果条目
+     *
+     * @param ctx Proxy 上下文
+     * @param ackMessageEntry Ack 条目
+     * @param ackResult Ack 结果
+     * @return Ack 结果条目
+     */
     protected AckMessageResultEntry convertToAckMessageResultEntry(ProxyContext ctx, AckMessageEntry ackMessageEntry,
         AckResult ackResult) {
         if (AckStatus.OK.equals(ackResult.getStatus())) {
@@ -181,6 +248,12 @@ public class AckMessageActivity extends AbstractMessingActivity {
             .build();
     }
 
+    /**
+     * 根据条目状态集合设置整体 Ack 响应状态
+     *
+     * @param responseBuilder 响应构建器
+     * @param responseCodes 状态码集合
+     */
     protected void setAckResponseStatus(AckMessageResponse.Builder responseBuilder, Set<Code> responseCodes) {
         if (responseCodes.size() > 1) {
             responseBuilder.setStatus(ResponseBuilder.getInstance().buildStatus(Code.MULTIPLE_RESULTS, Code.MULTIPLE_RESULTS.name()));
@@ -192,6 +265,15 @@ public class AckMessageActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 获取有效的 receiptHandle 字符串
+     *
+     * @param ctx Proxy 上下文
+     * @param group 消费组
+     * @param request Ack 请求
+     * @param ackMessageEntry Ack 条目
+     * @return 有效 receiptHandle 字符串
+     */
     protected String getHandleString(ProxyContext ctx, String group, AckMessageRequest request, AckMessageEntry ackMessageEntry) {
         String handleString = ackMessageEntry.getReceiptHandle();
         GrpcClientChannel channel = grpcChannelManager.getChannel(ctx.getClientID());

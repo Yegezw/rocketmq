@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RocketMQ Proxy 核心流程可视化动画</title>
+  <style>
+
+    @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+    :root {
+      color-scheme: dark;
+      --bg: #070f1d; --panel-strong: rgba(15, 23, 42, 0.94); --border: rgba(148, 163, 184, 0.24);
+      --text: #e2e8f0; --text-strong: #f8fafc; --muted: #94a3b8; --accent: #38bdf8;
+      --inbound: #38bdf8; --outbound: #22c55e; --internal: #a78bfa;
+      --radius-lg: 16px; --radius-md: 12px; --radius-sm: 10px;
+      --shadow: 0 20px 42px rgba(2, 6, 23, 0.5); --shadow-soft: 0 10px 24px rgba(2, 6, 23, 0.35);
+      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --lane-main: rgba(59, 130, 246, 0.14); --lane-ingress: rgba(34, 197, 94, 0.14);
+      --lane-core: rgba(167, 139, 250, 0.13); --lane-service: rgba(245, 158, 11, 0.13);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--text);
+      background:
+        radial-gradient(860px 460px at 8% -18%, rgba(56, 189, 248, 0.2), transparent 62%),
+        radial-gradient(860px 460px at 92% -16%, rgba(34, 197, 94, 0.16), transparent 62%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(7, 15, 29, 1));
+      overflow: auto;
+    }
+    .skip-link { position: absolute; left: 12px; top: -48px; z-index: 99; padding: 8px 12px; border-radius: 8px; text-decoration: none; background: #f8fafc; color: #0f172a; font-size: 12px; font-weight: 600; transition: top 0.2s ease; }
+    .skip-link:focus { top: 12px; }
+    header {
+      min-height: 68px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel-strong);
+      backdrop-filter: blur(16px); position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .title-wrap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    header h1 { margin: 0; font-size: clamp(16px, 1.35vw, 21px); line-height: 1.2; color: var(--text-strong); }
+    .subtitle { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 64vw; }
+    .status { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+    .status span { background: linear-gradient(180deg, rgba(30, 41, 59, 0.75), rgba(15, 23, 42, 0.92)); border: 1px solid var(--border); border-radius: 999px; color: var(--text); padding: 5px 10px; max-width: 290px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .container { min-height: calc(100vh - 68px); display: grid; grid-template-columns: minmax(300px, 360px) minmax(680px, 1fr) minmax(280px, 340px); grid-template-areas: "left stage right" "left log right"; grid-template-rows: 1fr minmax(240px, auto); gap: 12px; padding: 12px; }
+    .left-panel { grid-area: left; position: sticky; top: 82px; max-height: calc(100vh - 94px); overflow: auto; }
+    .stage-panel { grid-area: stage; min-width: 0; position: relative; overflow-x: auto; }
+    .right-panel { grid-area: right; min-width: 0; }
+    .log-panel { grid-area: log; min-width: 0; }
+    .panel { background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.76)); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; box-shadow: var(--shadow); }
+    .panel h2 { margin: 0 0 10px; font-size: 12px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.72px; font-family: var(--mono); }
+    .group { background: linear-gradient(180deg, rgba(30, 41, 59, 0.74), rgba(15, 23, 42, 0.85)); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px; margin-bottom: 10px; box-shadow: var(--shadow-soft); }
+    .group:last-child { margin-bottom: 0; }
+    .group-title { margin-bottom: 8px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; font-family: var(--mono); }
+    .hint { font-size: 10px; color: var(--muted); line-height: 1.45; margin-top: 6px; }
+    .scenario-row { display: grid; gap: 7px; }
+    button {
+      border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; background: linear-gradient(180deg, rgba(30, 41, 59, 0.72), rgba(15, 23, 42, 0.94)); color: var(--text);
+      min-height: 42px; cursor: pointer; text-align: left; padding: 8px 10px; font-size: 11px; transition: border-color 0.2s ease, transform 0.2s ease; font-family: inherit; display: grid; gap: 2px;
+    }
+    button:hover { border-color: rgba(56, 189, 248, 0.62); transform: translateY(-1px); }
+    button.active { border-color: rgba(56, 189, 248, 0.82); box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.36) inset; background: linear-gradient(180deg, rgba(30, 58, 92, 0.92), rgba(15, 23, 42, 0.98)); }
+    button.warn { border-color: rgba(245, 158, 11, 0.5); color: #fcd34d; }
+    button.secondary { border-color: rgba(34, 197, 94, 0.52); color: #86efac; }
+    button.ghost { border-color: rgba(148, 163, 184, 0.4); color: var(--muted); }
+    .scenario-label { font-weight: 600; color: var(--text-strong); }
+    .scenario-desc { color: var(--muted); font-size: 10px; line-height: 1.35; }
+    .play-controls { display: grid; gap: 8px; }
+    .play-row { display: grid; gap: 8px; }
+    .play-row.row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .play-row.row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    input[type="range"] { width: 100%; accent-color: var(--accent); }
+    .progress-metrics { margin-top: 8px; display: flex; justify-content: space-between; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+    .legend { display: grid; gap: 6px; }
+    .pill { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); background: rgba(15, 23, 42, 0.75); border: 1px solid var(--border); border-radius: 999px; padding: 5px 9px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; box-shadow: 0 0 12px currentColor; }
+    .dot.inbound { color: var(--inbound); background: var(--inbound); }
+    .dot.internal { color: var(--internal); background: var(--internal); }
+    .dot.outbound { color: var(--outbound); background: var(--outbound); }
+    .stage-toolbar { margin-bottom: 10px; }
+    .toolbar-row { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+    .scenario-badge { border: 1px solid rgba(56, 189, 248, 0.45); color: #cfeeff; background: rgba(15, 23, 42, 0.85); border-radius: 999px; padding: 4px 10px; font-size: 11px; font-family: var(--mono); }
+    .stage-canvas { position: relative; min-width: 980px; min-height: 620px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: linear-gradient(180deg, rgba(2, 6, 23, 0.54), rgba(15, 23, 42, 0.86)); overflow: hidden; }
+    .flow-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+    .flow-line { fill: none; stroke-width: 1.35; stroke-linecap: round; opacity: 0.88; }
+    .flow-line.static { stroke: rgba(148, 163, 184, 0.32); stroke-dasharray: 4 6; opacity: 0.55; }
+    .flow-line.inbound { stroke: var(--inbound); }
+    .flow-line.internal { stroke: var(--internal); }
+    .flow-line.outbound { stroke: var(--outbound); }
+    .flow-dot.inbound { fill: var(--inbound); }
+    .flow-dot.internal { fill: var(--internal); }
+    .flow-dot.outbound { fill: var(--outbound); }
+    .stage-grid { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr; gap: 8px; padding: 10px; min-height: 620px; }
+    .lane-section { border: 1px solid var(--border); border-radius: 12px; padding: 8px; }
+    .lane-section.main { background: var(--lane-main); }
+    .lane-section.ingress { background: var(--lane-ingress); }
+    .lane-section.core { background: var(--lane-core); }
+    .lane-section.service { background: var(--lane-service); }
+    .lane-title { font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px; text-transform: uppercase; }
+    .lane-content { display: grid; gap: 6px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .lane-content.ingress, .lane-content.core, .lane-content.service { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .node {
+      border: 1px solid rgba(148, 163, 184, 0.35); border-radius: var(--radius-sm); background: linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 0.76));
+      padding: 8px; min-height: 74px; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; cursor: pointer; font-size: 10px; color: var(--muted);
+      transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+    .node:hover { transform: translateY(-1px); border-color: rgba(56, 189, 248, 0.7); }
+    .node .title { color: var(--text-strong); font-weight: 600; font-size: 10px; line-height: 1.25; }
+    .node .thread-tag { width: fit-content; border: 1px solid rgba(148, 163, 184, 0.34); border-radius: 999px; padding: 2px 6px; font-size: 9px; font-family: var(--mono); color: var(--text); background: rgba(15, 23, 42, 0.78); }
+    .node.active { border-color: rgba(56, 189, 248, 0.9); box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35); }
+    .node.active.internal { border-color: rgba(167, 139, 250, 0.95); box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.36); }
+    .node.active.outbound { border-color: rgba(34, 197, 94, 0.95); box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.35); }
+    .node.selected { border-color: rgba(245, 158, 11, 0.85); box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35); }
+    .tag { display: inline-flex; align-items: center; border-radius: 999px; padding: 5px 10px; font-size: 10px; font-family: var(--mono); border: 1px solid transparent; width: fit-content; }
+    .tag.inbound { color: #bae6fd; border-color: rgba(56, 189, 248, 0.55); background: rgba(7, 89, 133, 0.32); }
+    .tag.internal { color: #ddd6fe; border-color: rgba(167, 139, 250, 0.5); background: rgba(91, 33, 182, 0.3); }
+    .tag.outbound { color: #bbf7d0; border-color: rgba(34, 197, 94, 0.52); background: rgba(21, 128, 61, 0.3); }
+    .method-list, .source-list { margin: 0; padding-left: 16px; display: grid; gap: 7px; font-size: 10px; color: var(--muted); line-height: 1.4; }
+    .method-list li, .source-list li { overflow-wrap: anywhere; word-break: break-word; }
+    .source-list .symbol { display: inline-block; color: var(--text-strong); font-family: var(--mono); font-size: 9px; margin-bottom: 2px; overflow-wrap: anywhere; word-break: break-all; }
+    .source-list .location { display: block; color: #bae6fd; font-size: 9px; font-family: var(--mono); margin-bottom: 2px; white-space: normal; overflow-wrap: anywhere; word-break: break-all; }
+    .source-list .note { display: block; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; word-break: break-word; }
+    .node-inspector { border: 1px solid var(--border); border-radius: var(--radius-sm); background: rgba(15, 23, 42, 0.62); padding: 10px; min-height: 68px; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; word-break: break-word; }
+    .flow-steps { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+    .flow-step { border: 1px solid var(--border); border-radius: var(--radius-sm); background: rgba(15, 23, 42, 0.72); padding: 8px 10px; display: grid; gap: 6px; cursor: pointer; transition: border-color 0.2s ease, transform 0.2s ease; width: fit-content; max-width: 100%; align-content: start; }
+    .flow-step:hover { border-color: rgba(56, 189, 248, 0.62); transform: translateY(-1px); }
+    .flow-step.active { border-color: rgba(56, 189, 248, 0.9); box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.3); background: rgba(30, 58, 92, 0.32); }
+    .step-title { display: flex; align-items: flex-start; gap: 6px; color: var(--text-strong); font-size: 11px; font-weight: 600; }
+    .step-title span:first-child { flex: 0 0 auto; color: var(--muted); font-family: var(--mono); }
+    .step-title span:last-child { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+    .step-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; color: var(--muted); font-size: 10px; font-family: var(--mono); }
+    .step-meta span { overflow-wrap: anywhere; word-break: break-word; }
+    .log { border: 1px solid var(--border); border-radius: var(--radius-sm); background: rgba(2, 6, 23, 0.65); min-height: 170px; max-height: 280px; overflow: auto; padding: 10px; font-family: var(--mono); font-size: 10px; color: #d1d5db; line-height: 1.5; }
+    .line { padding: 2px 0; border-bottom: 1px dashed rgba(148, 163, 184, 0.14); white-space: pre-wrap; word-break: break-word; }
+    .line:last-child { border-bottom: none; }
+    @media (max-width: 1440px) {
+      .container { grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); grid-template-areas: "left stage" "left right" "left log"; }
+      .left-panel { max-height: none; position: static; }
+    }
+    @media (max-width: 1060px) {
+      .container { grid-template-columns: 1fr; grid-template-areas: "left" "stage" "right" "log"; }
+      .subtitle { max-width: 100%; }
+      .stage-canvas { min-width: 100%; }
+      .lane-content, .lane-content.ingress, .lane-content.core, .lane-content.service { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">跳转到主要内容</a>
+  <header>
+    <div class="title-wrap">
+      <h1>RocketMQ Proxy 核心流程可视化动画</h1>
+      <div class="subtitle">覆盖启动装配、统一接入、路由元数据、生产消费、回执续期、客户端治理、事务与 Remoting 治理</div>
+    </div>
+    <div class="status">
+      <span id="status-step">当前步骤: -</span>
+      <span id="status-thread">线程: -</span>
+      <span id="status-request">请求/动作: -</span>
+      <span id="status-channel">连接状态: -</span>
+    </div>
+  </header>
+
+  <main class="container" id="mainContent">
+    <section class="panel left-panel">
+      <h2>控制台</h2>
+      <div class="group">
+        <div class="group-title">流程场景（1~9）</div>
+        <div class="scenario-row">
+          <button data-scenario="main" class="active" aria-pressed="true" aria-label="切换到1. 主流程：启动到请求闭环">
+            <span class="scenario-label">1. 主流程：启动到请求闭环</span>
+            <span class="scenario-desc">ProxyStartup 装配组件并完成一次端到端请求链路</span>
+          </button>
+          <button data-scenario="ingress" aria-pressed="false" aria-label="切换到2. 子流程：统一接入与鉴权">
+            <span class="scenario-label">2. 子流程：统一接入与鉴权</span>
+            <span class="scenario-desc">gRPC/Remoting 双入口上下文初始化、认证鉴权与线程池隔离</span>
+          </button>
+          <button data-scenario="route" aria-pressed="false" aria-label="切换到3. 子流程：路由与元数据">
+            <span class="scenario-label">3. 子流程：路由与元数据</span>
+            <span class="scenario-desc">queryRoute/queryAssignment 与 TopicRoute/Metadata 缓存读取</span>
+          </button>
+          <button data-scenario="produce" aria-pressed="false" aria-label="切换到4. 子流程：生产发送">
+            <span class="scenario-label">4. 子流程：生产发送</span>
+            <span class="scenario-desc">消息校验、队列选择、发送、故障规避与事务预处理</span>
+          </button>
+          <button data-scenario="consume" aria-pressed="false" aria-label="切换到5. 子流程：消费 POP/ACK">
+            <span class="scenario-label">5. 子流程：消费 POP/ACK</span>
+            <span class="scenario-desc">长轮询 POP、结果过滤、ACK/批量 ACK、改隐身时间</span>
+          </button>
+          <button data-scenario="renew" aria-pressed="false" aria-label="切换到6. 子流程：回执续期">
+            <span class="scenario-label">6. 子流程：回执续期</span>
+            <span class="scenario-desc">句柄扫描、续期重试、停止续期与离线清理</span>
+          </button>
+          <button data-scenario="client" aria-pressed="false" aria-label="切换到7. 子流程：客户端治理">
+            <span class="scenario-label">7. 子流程：客户端治理</span>
+            <span class="scenario-desc">Telemetry/Heartbeat/Termination、通道同步与清理</span>
+          </button>
+          <button data-scenario="transaction" aria-pressed="false" aria-label="切换到8. 子流程：事务链路">
+            <span class="scenario-label">8. 子流程：事务链路</span>
+            <span class="scenario-desc">事务数据落库、回查转发、结束事务与心跳同步</span>
+          </button>
+          <button data-scenario="remoting" aria-pressed="false" aria-label="切换到9. 子流程：Remoting 多协议与队列治理">
+            <span class="scenario-label">9. 子流程：Remoting 多协议与队列治理</span>
+            <span class="scenario-desc">请求码分发、协议协商、超时队列清理与响应映射</span>
+          </button>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-title">播放控制</div>
+        <div class="play-controls">
+          <div class="play-row row-3">
+            <button id="btn-reset" class="ghost" aria-label="重置流程">重置</button>
+            <button id="btn-prev" class="ghost" aria-label="执行上一步">上一步</button>
+            <button id="btn-next" aria-label="执行下一步">下一步</button>
+          </div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-title">进度导航</div>
+        <input id="stepRange" type="range" min="0" max="0" step="1" value="0" aria-label="步骤导航" />
+        <div class="progress-metrics"><span id="stepProgressText">进度 0 / 0</span><span id="stepProgressPercent">0%</span></div>
+        <div class="hint">拖动滑块可跳转到对应步骤</div>
+      </div>
+      <div class="group">
+        <div class="group-title">快捷键</div>
+        <div class="hint">←/→：上一步/下一步</div>
+        <div class="hint">R：重置，1~9：切换对应场景</div>
+      </div>
+      <div class="group">
+        <div class="group-title">图例</div>
+        <div class="legend">
+          <div class="pill"><span class="dot inbound"></span>入站链路：接入、协议转换、请求进入 Proxy</div>
+          <div class="pill"><span class="dot internal"></span>内部链路：分发、处理器调用、服务编排</div>
+          <div class="pill"><span class="dot outbound"></span>出站链路：访问 Broker/NameSrv 与响应回写</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel stage-panel">
+      <h2>流程图（Proxy）</h2>
+      <div class="stage-toolbar">
+        <div class="toolbar-row">
+          <div id="scenarioBadge" class="scenario-badge">场景：主流程</div>
+        </div>
+      </div>
+      <div class="stage-canvas">
+        <svg id="flowLines" class="flow-lines" aria-hidden="true"></svg>
+        <div class="stage-grid">
+          <div class="lane-section main">
+            <div class="lane-title">启动与模式装配（main thread）</div>
+            <div class="lane-content main">
+              <div class="node" data-node="proxy-startup" role="button" tabindex="0" aria-label="ProxyStartup">
+                <div class="title">ProxyStartup</div>
+                启动入口与生命周期编排
+                <div class="thread-tag">main</div>
+              </div> <div class="node" data-node="config-manager" role="button" tabindex="0" aria-label="ConfigurationManager">
+                <div class="title">ConfigurationManager</div>
+                环境与配置初始化
+                <div class="thread-tag">main</div>
+              </div> <div class="node" data-node="mode-select" role="button" tabindex="0" aria-label="ProxyMode">
+                <div class="title">ProxyMode</div>
+                local / cluster 模式判定
+                <div class="thread-tag">main</div>
+              </div> <div class="node" data-node="service-manager" role="button" tabindex="0" aria-label="ServiceManagerFactory">
+                <div class="title">ServiceManagerFactory</div>
+                Local/ClusterServiceManager 构建
+                <div class="thread-tag">main</div>
+              </div> <div class="node" data-node="messaging-processor" role="button" tabindex="0" aria-label="DefaultMessagingProcessor">
+                <div class="title">DefaultMessagingProcessor</div>
+                统一消息处理聚合器
+                <div class="thread-tag">main</div>
+              </div> <div class="node" data-node="metrics-manager" role="button" tabindex="0" aria-label="ProxyMetricsManager">
+                <div class="title">ProxyMetricsManager</div>
+                指标出口与 Meter 初始化
+                <div class="thread-tag">main</div>
+              </div> <div class="node" data-node="grpc-server" role="button" tabindex="0" aria-label="GrpcServer">
+                <div class="title">GrpcServer</div>
+                v2 API 服务监听
+                <div class="thread-tag">grpc boss/worker</div>
+              </div> <div class="node" data-node="remoting-server" role="button" tabindex="0" aria-label="RemotingProtocolServer">
+                <div class="title">RemotingProtocolServer</div>
+                remoting 入口与请求码分发
+                <div class="thread-tag">netty server</div>
+              </div> <div class="node" data-node="broker-controller" role="button" tabindex="0" aria-label="BrokerController (local)">
+                <div class="title">BrokerController (local)</div>
+                本地模式内嵌 Broker
+                <div class="thread-tag">local mode</div>
+              </div> <div class="node" data-node="threadpool-monitor" role="button" tabindex="0" aria-label="ThreadPoolMonitor">
+                <div class="title">ThreadPoolMonitor</div>
+                线程池监控与水位日志
+                <div class="thread-tag">common infra</div>
+              </div>
+            </div>
+          </div>
+          <div class="lane-section ingress">
+            <div class="lane-title">统一接入管线（gRPC + Remoting + 多协议）</div>
+            <div class="lane-content ingress">
+              <div class="node" data-node="grpc-interceptors" role="button" tabindex="0" aria-label="gRPC Interceptors">
+                <div class="title">gRPC Interceptors</div>
+                GlobalException / Context / Header
+                <div class="thread-tag">grpc inbound</div>
+              </div> <div class="node" data-node="grpc-pipeline" role="button" tabindex="0" aria-label="gRPC RequestPipeline">
+                <div class="title">gRPC RequestPipeline</div>
+                ContextInit + AuthN/AuthZ
+                <div class="thread-tag">grpc pipeline</div>
+              </div> <div class="node" data-node="grpc-application" role="button" tabindex="0" aria-label="GrpcMessagingApplication">
+                <div class="title">GrpcMessagingApplication</div>
+                API 分发与状态封装
+                <div class="thread-tag">grpc service</div>
+              </div> <div class="node" data-node="grpc-executors" role="button" tabindex="0" aria-label="gRPC Thread Pools">
+                <div class="title">gRPC Thread Pools</div>
+                route/producer/consumer/client/txn
+                <div class="thread-tag">thread pools</div>
+              </div> <div class="node" data-node="remoting-protocol-server" role="button" tabindex="0" aria-label="RemotingProtocolServer">
+                <div class="title">RemotingProtocolServer</div>
+                registerProcessor + invokeToClient
+                <div class="thread-tag">remoting core</div>
+              </div> <div class="node" data-node="protocol-negotiation" role="button" tabindex="0" aria-label="ProtocolNegotiation">
+                <div class="title">ProtocolNegotiation</div>
+                Remoting / HTTP2 自动识别
+                <div class="thread-tag">netty decode</div>
+              </div> <div class="node" data-node="remoting-pipeline" role="button" tabindex="0" aria-label="Remoting Pipeline">
+                <div class="title">Remoting Pipeline</div>
+                ContextInit + AuthN/AuthZ
+                <div class="thread-tag">request pipe</div>
+              </div> <div class="node" data-node="remoting-activities" role="button" tabindex="0" aria-label="Remoting Activities">
+                <div class="title">Remoting Activities</div>
+                Send/Pull/Client/Consumer/Txn
+                <div class="thread-tag">activity layer</div>
+              </div> <div class="node" data-node="remoting-executors" role="button" tabindex="0" aria-label="Remoting Executors">
+                <div class="title">Remoting Executors</div>
+                send/pull/heartbeat/offset/default
+                <div class="thread-tag">thread pools</div>
+              </div> <div class="node" data-node="request-cleaner" role="button" tabindex="0" aria-label="Queue Cleaner">
+                <div class="title">Queue Cleaner</div>
+                cleanExpiredRequestInQueue
+                <div class="thread-tag">timer task</div>
+              </div> <div class="node" data-node="auth-metadata" role="button" tabindex="0" aria-label="Auth Metadata Provider">
+                <div class="title">Auth Metadata Provider</div>
+                User/Acl 元数据查询
+                <div class="thread-tag">auth extension</div>
+              </div>
+            </div>
+          </div>
+          <div class="lane-section core">
+            <div class="lane-title">核心活动与处理器（业务编排）</div>
+            <div class="lane-content core">
+              <div class="node" data-node="default-grpc-activity" role="button" tabindex="0" aria-label="DefaultGrpcMessingActivity">
+                <div class="title">DefaultGrpcMessingActivity</div>
+                gRPC 活动聚合入口
+                <div class="thread-tag">grpc activity</div>
+              </div> <div class="node" data-node="client-activity" role="button" tabindex="0" aria-label="ClientActivity">
+                <div class="title">ClientActivity</div>
+                telemetry/heartbeat/termination
+                <div class="thread-tag">client mgmt</div>
+              </div> <div class="node" data-node="route-activity" role="button" tabindex="0" aria-label="RouteActivity">
+                <div class="title">RouteActivity</div>
+                queryRoute/queryAssignment
+                <div class="thread-tag">route</div>
+              </div> <div class="node" data-node="send-activity" role="button" tabindex="0" aria-label="SendMessageActivity">
+                <div class="title">SendMessageActivity</div>
+                发送前校验与属性构建
+                <div class="thread-tag">producer grpc</div>
+              </div> <div class="node" data-node="receive-activity" role="button" tabindex="0" aria-label="ReceiveMessageActivity">
+                <div class="title">ReceiveMessageActivity</div>
+                POP 长轮询入口
+                <div class="thread-tag">consumer grpc</div>
+              </div> <div class="node" data-node="ack-activity" role="button" tabindex="0" aria-label="AckMessageActivity">
+                <div class="title">AckMessageActivity</div>
+                ACK / Batch ACK
+                <div class="thread-tag">consumer grpc</div>
+              </div> <div class="node" data-node="txn-activity" role="button" tabindex="0" aria-label="EndTransactionActivity">
+                <div class="title">EndTransactionActivity</div>
+                事务结束请求入口
+                <div class="thread-tag">txn grpc</div>
+              </div> <div class="node" data-node="producer-processor" role="button" tabindex="0" aria-label="ProducerProcessor">
+                <div class="title">ProducerProcessor</div>
+                队列选择、发送、回调
+                <div class="thread-tag">core producer</div>
+              </div> <div class="node" data-node="consumer-processor" role="button" tabindex="0" aria-label="ConsumerProcessor">
+                <div class="title">ConsumerProcessor</div>
+                POP/ACK/Offset/Lock 流程
+                <div class="thread-tag">core consumer</div>
+              </div> <div class="node" data-node="transaction-processor" role="button" tabindex="0" aria-label="TransactionProcessor">
+                <div class="title">TransactionProcessor</div>
+                commit/rollback 转换
+                <div class="thread-tag">core txn</div>
+              </div> <div class="node" data-node="request-broker-processor" role="button" tabindex="0" aria-label="RequestBrokerProcessor">
+                <div class="title">RequestBrokerProcessor</div>
+                通用 Broker 请求转发
+                <div class="thread-tag">core broker req</div>
+              </div> <div class="node" data-node="client-processor" role="button" tabindex="0" aria-label="ClientProcessor">
+                <div class="title">ClientProcessor</div>
+                Producer/Consumer 注册管理
+                <div class="thread-tag">core client</div>
+              </div> <div class="node" data-node="receipt-handle-processor" role="button" tabindex="0" aria-label="ReceiptHandleProcessor">
+                <div class="title">ReceiptHandleProcessor</div>
+                句柄入库与续期事件桥接
+                <div class="thread-tag">core receipt</div>
+              </div>
+            </div>
+          </div>
+          <div class="lane-section service">
+            <div class="lane-title">服务层与状态（路由、元数据、事务、同步）</div>
+            <div class="lane-content service">
+              <div class="node" data-node="topic-route-service" role="button" tabindex="0" aria-label="TopicRouteService">
+                <div class="title">TopicRouteService</div>
+                Caffeine 缓存与故障规避
+                <div class="thread-tag">service route</div>
+              </div> <div class="node" data-node="metadata-service" role="button" tabindex="0" aria-label="MetadataService">
+                <div class="title">MetadataService</div>
+                TopicType/Group/User/Acl
+                <div class="thread-tag">service metadata</div>
+              </div> <div class="node" data-node="message-service" role="button" tabindex="0" aria-label="MessageService">
+                <div class="title">MessageService</div>
+                Cluster/Local Broker 通信
+                <div class="thread-tag">service message</div>
+              </div> <div class="node" data-node="transaction-service" role="button" tabindex="0" aria-label="TransactionService">
+                <div class="title">TransactionService</div>
+                事务数据管理与心跳
+                <div class="thread-tag">service txn</div>
+              </div> <div class="node" data-node="relay-service" role="button" tabindex="0" aria-label="ProxyRelayService">
+                <div class="title">ProxyRelayService</div>
+                回查/直连消费转发桥
+                <div class="thread-tag">service relay</div>
+              </div> <div class="node" data-node="receipt-handle-manager" role="button" tabindex="0" aria-label="DefaultReceiptHandleManager">
+                <div class="title">DefaultReceiptHandleManager</div>
+                句柄扫描、续期、清理
+                <div class="thread-tag">service receipt</div>
+              </div> <div class="node" data-node="grpc-channel-manager" role="button" tabindex="0" aria-label="GrpcChannelManager">
+                <div class="title">GrpcChannelManager</div>
+                clientId->channel + nonce future
+                <div class="thread-tag">grpc channel</div>
+              </div> <div class="node" data-node="grpc-settings-manager" role="button" tabindex="0" aria-label="GrpcClientSettingsManager">
+                <div class="title">GrpcClientSettingsManager</div>
+                Settings 合并与过期清理
+                <div class="thread-tag">grpc settings</div>
+              </div> <div class="node" data-node="cluster-consumer-manager" role="button" tabindex="0" aria-label="ClusterConsumerManager">
+                <div class="title">ClusterConsumerManager</div>
+                消费者注册与同步扩展
+                <div class="thread-tag">cluster client</div>
+              </div> <div class="node" data-node="heartbeat-syncer" role="button" tabindex="0" aria-label="HeartbeatSyncer">
+                <div class="title">HeartbeatSyncer</div>
+                多 Proxy 消费者心跳广播
+                <div class="thread-tag">system topic</div>
+              </div> <div class="node" data-node="broker-namesrv" role="button" tabindex="0" aria-label="Broker / NameSrv">
+                <div class="title">Broker / NameSrv</div>
+                真实存储与路由源头
+                <div class="thread-tag">remote endpoint</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel right-panel">
+      <h2>步骤说明</h2>
+      <div class="group">
+        <div class="group-title">当前链路标签</div>
+        <div id="activeTag" class="tag inbound">入站阶段</div>
+      </div>
+      <div class="group">
+        <div class="group-title">核心调用链</div>
+        <ul id="methodList" class="method-list"><li>等待执行步骤后展示</li></ul>
+      </div>
+      <div class="group">
+        <div class="group-title">源码锚点（RocketMQ）</div>
+        <ul id="sourceAnchorList" class="source-list"><li>等待执行步骤后展示</li></ul>
+      </div>
+      <div class="group">
+        <div class="group-title">节点职责（点击节点查看）</div>
+        <div id="nodeInspector" class="node-inspector">选择一个节点查看 Proxy 中该节点的职责与边界</div>
+      </div>
+    </section>
+
+    <section class="panel log-panel">
+      <h2>流程步骤与日志</h2>
+      <div id="flowSteps" class="flow-steps"></div>
+      <div id="logList" class="log"></div>
+    </section>
+  </main>
+
+  <script>
+    const data = {"scenarios": {"main": {"label": "主流程：启动到请求闭环", "steps": [{"id": "main-1", "title": "启动入口解析配置", "thread": "main", "requestCode": "startup", "channel": "UNBOUND", "tone": "inbound", "tag": "启动入口", "highlight": ["proxy-startup", "config-manager", "mode-select"], "methods": ["ProxyStartup.main(args)", "parseCommandLineArgument(args)", "initConfiguration(commandLineArgument)"], "anchors": [{"symbol": "ProxyStartup#main", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/ProxyStartup.java", "note": "解析参数并初始化配置"}], "anim": [{"from": "proxy-startup", "to": "config-manager", "tone": "inbound"}, {"from": "config-manager", "to": "mode-select", "tone": "inbound"}], "log": "完成配置初始化并确定运行模式"}, {"id": "main-2", "title": "构建 MessagingProcessor 与服务管理器", "thread": "main", "requestCode": "startup", "channel": "INIT", "tone": "internal", "tag": "模式装配", "highlight": ["mode-select", "service-manager", "messaging-processor", "metrics-manager", "broker-controller"], "methods": ["createMessagingProcessor()", "DefaultMessagingProcessor.createForClusterMode()/createForLocalMode()", "ServiceManagerFactory.createForClusterMode()/createForLocalMode()"], "anchors": [{"symbol": "ProxyStartup#createMessagingProcessor", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/ProxyStartup.java", "note": "local/cluster 分支装配"}], "anim": [{"from": "mode-select", "to": "service-manager", "tone": "internal"}, {"from": "service-manager", "to": "messaging-processor", "tone": "internal"}], "log": "核心处理器和服务层装配完成"}, {"id": "main-3", "title": "创建 gRPC 与 Remoting 服务", "thread": "main", "requestCode": "startup", "channel": "LISTENING", "tone": "internal", "tag": "服务创建", "highlight": ["messaging-processor", "grpc-server", "remoting-server", "threadpool-monitor"], "methods": ["createServerExecutor()", "GrpcServerBuilder.newBuilder(...).configInterceptor().build()", "new RemotingProtocolServer(messagingProcessor)"], "anchors": [{"symbol": "GrpcServerBuilder#configInterceptor", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/GrpcServerBuilder.java", "note": "挂载全局拦截器"}], "anim": [{"from": "messaging-processor", "to": "grpc-server", "tone": "internal"}, {"from": "messaging-processor", "to": "remoting-server", "tone": "internal"}], "log": "双协议入口初始化完成"}, {"id": "main-4", "title": "启动所有生命周期组件并进入接入态", "thread": "main -> io", "requestCode": "startup", "channel": "ACTIVE", "tone": "inbound", "tag": "启动完成", "highlight": ["service-manager", "grpc-server", "remoting-server", "remoting-protocol-server"], "methods": ["PROXY_START_AND_SHUTDOWN.start()", "GrpcServer.start()", "RemotingProtocolServer.start()"], "anchors": [{"symbol": "RemotingProtocolServer#start", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/remoting/RemotingProtocolServer.java", "note": "启动通道管理与 Netty 服务"}], "anim": [{"from": "service-manager", "to": "grpc-server", "tone": "inbound"}, {"from": "service-manager", "to": "remoting-server", "tone": "inbound"}], "log": "服务端口开始接受流量"}, {"id": "main-5", "title": "请求经接入管线后分发到活动层", "thread": "grpc/remoting executors", "requestCode": "QueryRoute/SendMessage", "channel": "ACTIVE", "tone": "internal", "tag": "统一接入", "highlight": ["grpc-interceptors", "grpc-pipeline", "remoting-pipeline", "grpc-application", "default-grpc-activity"], "methods": ["ContextInterceptor.interceptCall(...)", "ContextInitPipeline.execute(...)", "AuthenticationPipeline.execute(...)", "GrpcMessagingApplication.addExecutor(...)"], "anchors": [{"symbol": "ContextInitPipeline#execute", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/pipeline/ContextInitPipeline.java", "note": "填充 ProxyContext"}], "anim": [{"from": "grpc-interceptors", "to": "grpc-pipeline", "tone": "inbound"}, {"from": "grpc-pipeline", "to": "grpc-application", "tone": "internal"}, {"from": "grpc-application", "to": "default-grpc-activity", "tone": "internal"}], "log": "鉴权通过后进入业务活动层"}, {"id": "main-6", "title": "活动层调用处理器并访问服务层", "thread": "grpc/remoting executors", "requestCode": "route/send/pop/ack/txn", "channel": "ACTIVE", "tone": "internal", "tag": "业务处理", "highlight": ["route-activity", "send-activity", "receive-activity", "producer-processor", "consumer-processor", "message-service", "topic-route-service", "metadata-service"], "methods": ["DefaultGrpcMessingActivity.*", "DefaultMessagingProcessor.*", "ProducerProcessor/ConsumerProcessor/TransactionProcessor"], "anchors": [{"symbol": "DefaultMessagingProcessor", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/processor/DefaultMessagingProcessor.java", "note": "统一调用处理器并转发服务层"}], "anim": [{"from": "send-activity", "to": "producer-processor", "tone": "internal"}, {"from": "producer-processor", "to": "message-service", "tone": "internal"}, {"from": "route-activity", "to": "topic-route-service", "tone": "internal"}], "log": "处理链完成并准备回写响应"}, {"id": "main-7", "title": "服务层访问 Broker/NameSrv 并回写响应", "thread": "async callback", "requestCode": "response", "channel": "ACTIVE", "tone": "outbound", "tag": "响应回写", "highlight": ["message-service", "broker-namesrv", "grpc-application", "remoting-activities"], "methods": ["ClusterMessageService.* / LocalMessageService.*", "GrpcMessagingApplication.writeResponse(...)", "AbstractRemotingActivity.writeResponse(...)"], "anchors": [{"symbol": "GrpcMessagingApplication#writeResponse", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/GrpcMessagingApplication.java", "note": "统一状态回写"}], "anim": [{"from": "message-service", "to": "broker-namesrv", "tone": "outbound"}, {"from": "message-service", "to": "grpc-application", "tone": "outbound"}], "log": "主流程闭环"}]}, "ingress": {"label": "子流程：统一接入与鉴权", "steps": [{"id": "ingress-1", "title": "gRPC 拦截器注入上下文与异常保护", "thread": "grpc interceptors", "requestCode": "all gRPC methods", "channel": "ACTIVE", "tone": "inbound", "tag": "gRPC 入站", "highlight": ["grpc-server", "grpc-interceptors"], "methods": ["GlobalExceptionInterceptor.interceptCall(...)", "ContextInterceptor.interceptCall(...)", "HeaderInterceptor.interceptCall(...)"], "anchors": [{"symbol": "HeaderInterceptor#interceptCall", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/interceptor/HeaderInterceptor.java", "note": "补充 remote/local 等 header"}], "anim": [{"from": "grpc-server", "to": "grpc-interceptors", "tone": "inbound"}], "log": "入站请求先进入拦截器链"}, {"id": "ingress-2", "title": "gRPC RequestPipeline 执行 ContextInit/AuthN/AuthZ", "thread": "grpc pipeline", "requestCode": "all gRPC methods", "channel": "ACTIVE", "tone": "internal", "tag": "gRPC 管线", "highlight": ["grpc-pipeline", "auth-metadata", "metadata-service"], "methods": ["ContextInitPipeline.execute(...)", "AuthenticationPipeline.execute(...)", "AuthorizationPipeline.execute(...)"], "anchors": [{"symbol": "AuthenticationPipeline#execute", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/pipeline/AuthenticationPipeline.java", "note": "基于 MetadataService 校验身份"}], "anim": [{"from": "grpc-interceptors", "to": "grpc-pipeline", "tone": "internal"}, {"from": "grpc-pipeline", "to": "auth-metadata", "tone": "internal"}, {"from": "auth-metadata", "to": "metadata-service", "tone": "internal"}], "log": "鉴权通过后才会进入活动层"}, {"id": "ingress-3", "title": "GrpcMessagingApplication 按请求类型隔离线程池", "thread": "grpc executors", "requestCode": "queryRoute/send/receive/...", "channel": "ACTIVE", "tone": "internal", "tag": "线程池隔离", "highlight": ["grpc-application", "grpc-executors", "default-grpc-activity"], "methods": ["GrpcMessagingApplication.addExecutor(...)", "validateContext(context)", "GrpcTaskRejectedExecutionHandler.rejectedExecution(...)"], "anchors": [{"symbol": "GrpcMessagingApplication#addExecutor", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/GrpcMessagingApplication.java", "note": "线程池满载返回 TOO_MANY_REQUESTS"}], "anim": [{"from": "grpc-pipeline", "to": "grpc-application", "tone": "internal"}, {"from": "grpc-application", "to": "grpc-executors", "tone": "internal"}], "log": "不同类型请求进入不同执行器"}, {"id": "ingress-4", "title": "Remoting 请求码分发到专用 Activity", "thread": "remoting executors", "requestCode": "SEND/PULL/HEART_BEAT/ACK", "channel": "ACTIVE", "tone": "inbound", "tag": "Remoting 入站", "highlight": ["remoting-protocol-server", "remoting-activities", "remoting-executors"], "methods": ["RemotingProtocolServer.registerRemotingServer(...)", "AbstractRemotingActivity.processRequest(...)"], "anchors": [{"symbol": "RemotingProtocolServer#registerRemotingServer", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/remoting/RemotingProtocolServer.java", "note": "请求码映射到 activity + executor"}], "anim": [{"from": "remoting-protocol-server", "to": "remoting-activities", "tone": "inbound"}, {"from": "remoting-activities", "to": "remoting-executors", "tone": "inbound"}], "log": "remoting 入口完成业务分发"}, {"id": "ingress-5", "title": "Remoting 管线执行 ContextInit/AuthN/AuthZ", "thread": "remoting pipeline", "requestCode": "all remoting requests", "channel": "ACTIVE", "tone": "internal", "tag": "Remoting 管线", "highlight": ["protocol-negotiation", "remoting-pipeline", "auth-metadata"], "methods": ["ContextInitPipeline.execute(...)", "AuthenticationPipeline.execute(...)", "AuthorizationPipeline.execute(...)"], "anchors": [{"symbol": "ContextInitPipeline#execute", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/remoting/pipeline/ContextInitPipeline.java", "note": "补充 channel/client/version"}], "anim": [{"from": "protocol-negotiation", "to": "remoting-pipeline", "tone": "internal"}, {"from": "remoting-pipeline", "to": "auth-metadata", "tone": "internal"}], "log": "Remoting 与 gRPC 共享鉴权模型"}, {"id": "ingress-6", "title": "异常统一映射并回写", "thread": "grpc/remoting response path", "requestCode": "error mapping", "channel": "ACTIVE", "tone": "outbound", "tag": "异常回写", "highlight": ["grpc-application", "remoting-activities", "grpc-server", "remoting-protocol-server"], "methods": ["GrpcMessagingApplication.convertExceptionToStatus(...)", "AbstractRemotingActivity.writeErrResponse(...)", "GlobalExceptionInterceptor.closeWithException(...)"], "anchors": [{"symbol": "AbstractRemotingActivity#writeErrResponse", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/remoting/activity/AbstractRemotingActivity.java", "note": "统一异常 -> response code"}], "anim": [{"from": "grpc-application", "to": "grpc-server", "tone": "outbound"}, {"from": "remoting-activities", "to": "remoting-protocol-server", "tone": "outbound"}], "log": "错误被标准化并返回客户端"}]}, "route": {"label": "子流程：路由与元数据", "steps": [{"id": "route-1", "title": "RouteActivity 处理 queryRoute/queryAssignment", "thread": "grpc route executor", "requestCode": "QueryRoute/QueryAssignment", "channel": "ACTIVE", "tone": "inbound", "tag": "路由入口", "highlight": ["grpc-application", "default-grpc-activity", "route-activity"], "methods": ["GrpcMessagingApplication.queryRoute/queryAssignment", "RouteActivity.queryRoute/queryAssignment"], "anchors": [{"symbol": "RouteActivity#queryRoute", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/route/RouteActivity.java", "note": "路由查询入口"}], "anim": [{"from": "grpc-application", "to": "default-grpc-activity", "tone": "inbound"}, {"from": "default-grpc-activity", "to": "route-activity", "tone": "inbound"}], "log": "请求进入 RouteActivity"}, {"id": "route-2", "title": "读取 ProxyTopicRouteData（带缓存）", "thread": "route executor", "requestCode": "query route", "channel": "ACTIVE", "tone": "internal", "tag": "路由读取", "highlight": ["route-activity", "messaging-processor", "topic-route-service", "broker-namesrv"], "methods": ["messagingProcessor.getTopicRouteDataForProxy(...)", "TopicRouteService.getAllMessageQueueView(...)"], "anchors": [{"symbol": "TopicRouteService#getAllMessageQueueView", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/route/TopicRouteService.java", "note": "Caffeine 缓存 + namesrv 拉取"}], "anim": [{"from": "route-activity", "to": "messaging-processor", "tone": "internal"}, {"from": "messaging-processor", "to": "topic-route-service", "tone": "internal"}, {"from": "topic-route-service", "to": "broker-namesrv", "tone": "outbound"}], "log": "返回 ProxyTopicRouteData"}, {"id": "route-3", "title": "构建 BrokerMap、Queue 权限与消息类型", "thread": "route executor", "requestCode": "query route", "channel": "ACTIVE", "tone": "internal", "tag": "响应组装", "highlight": ["route-activity", "metadata-service"], "methods": ["buildBrokerMap(...)", "genMessageQueueFromQueueData(...)", "metadataService.getTopicMessageType(...)"], "anchors": [{"symbol": "RouteActivity#genMessageQueueFromQueueData", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/route/RouteActivity.java", "note": "按 READ/WRITE/RW/NONE 生成队列"}], "anim": [{"from": "route-activity", "to": "metadata-service", "tone": "internal"}], "log": "完成 message queue 列表构造"}, {"id": "route-4", "title": "queryAssignment 按订阅组判断 FIFO 分配", "thread": "route executor", "requestCode": "QueryAssignment", "channel": "ACTIVE", "tone": "internal", "tag": "分配策略", "highlight": ["route-activity", "metadata-service", "broker-namesrv"], "methods": ["messagingProcessor.getSubscriptionGroupConfig(...)", "SubscriptionGroupConfig.isConsumeMessageOrderly()"], "anchors": [{"symbol": "ClusterMetadataService#getSubscriptionGroupConfig", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/metadata/ClusterMetadataService.java", "note": "读取并缓存订阅组"}], "anim": [{"from": "route-activity", "to": "metadata-service", "tone": "internal"}, {"from": "metadata-service", "to": "broker-namesrv", "tone": "outbound"}], "log": "FIFO 与普通消费组采用不同 assignment 规则"}, {"id": "route-5", "title": "认证授权读取 User/Acl 元数据", "thread": "metadata executor", "requestCode": "auth metadata", "channel": "ACTIVE", "tone": "internal", "tag": "鉴权元数据", "highlight": ["auth-metadata", "metadata-service", "broker-namesrv"], "methods": ["ProxyAuthenticationMetadataProvider.getUser(...)", "ProxyAuthorizationMetadataProvider.getAcl(...)"], "anchors": [{"symbol": "ProxyAuthorizationMetadataProvider#getAcl", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/auth/ProxyAuthorizationMetadataProvider.java", "note": "授权元数据读取入口"}], "anim": [{"from": "auth-metadata", "to": "metadata-service", "tone": "internal"}, {"from": "metadata-service", "to": "broker-namesrv", "tone": "outbound"}], "log": "鉴权上下文从 MetadataService 获取用户与 ACL"}, {"id": "route-6", "title": "回写 QueryRoute/QueryAssignment 响应", "thread": "grpc callback", "requestCode": "RouteResponse", "channel": "ACTIVE", "tone": "outbound", "tag": "响应回写", "highlight": ["route-activity", "grpc-application"], "methods": ["ResponseBuilder.buildStatus(Code.OK, ...)", "GrpcMessagingApplication.writeResponse(...)"], "anchors": [{"symbol": "RouteActivity#queryAssignment", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/route/RouteActivity.java", "note": "无可读队列返回 FORBIDDEN"}], "anim": [{"from": "route-activity", "to": "grpc-application", "tone": "outbound"}], "log": "路由子流程闭环"}]}, "produce": {"label": "子流程：生产发送", "steps": [{"id": "produce-1", "title": "SendMessageActivity 执行发送前校验", "thread": "grpc producer executor", "requestCode": "SendMessage", "channel": "ACTIVE", "tone": "inbound", "tag": "发送入口", "highlight": ["send-activity"], "methods": ["SendMessageActivity.sendMessage(...)", "validateMessageBodySize(...)", "validateMessageKey(...)"], "anchors": [{"symbol": "SendMessageActivity#sendMessage", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/producer/SendMessageActivity.java", "note": "构建 MQ Message 与系统属性"}], "anim": [{"from": "default-grpc-activity", "to": "send-activity", "tone": "inbound"}], "log": "消息体、属性、Topic 校验通过"}, {"id": "produce-2", "title": "按 shardingKey/故障规避选择队列", "thread": "grpc producer executor", "requestCode": "SendMessage", "channel": "ACTIVE", "tone": "internal", "tag": "队列选择", "highlight": ["send-activity", "producer-processor", "topic-route-service"], "methods": ["SendMessageQueueSelector.select(...)", "ProducerProcessor.sendMessage(...)", "TopicRouteService.getCurrentMessageQueueView(...)"], "anchors": [{"symbol": "SendMessageQueueSelector#select", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/producer/SendMessageActivity.java", "note": "FIFO 一致性哈希选择"}], "anim": [{"from": "send-activity", "to": "producer-processor", "tone": "internal"}, {"from": "producer-processor", "to": "topic-route-service", "tone": "internal"}], "log": "目标队列确定"}, {"id": "produce-3", "title": "ProducerProcessor 执行主题类型校验与发送", "thread": "producerProcessorExecutor", "requestCode": "SEND_MESSAGE", "channel": "ACTIVE", "tone": "internal", "tag": "核心发送", "highlight": ["producer-processor", "metadata-service", "message-service"], "methods": ["TopicMessageTypeValidator.validate(...)", "MessageService.sendMessage(...)", "updateFaultItem(...)"], "anchors": [{"symbol": "ProducerProcessor#sendMessage", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/processor/ProducerProcessor.java", "note": "发送后更新故障规避窗口"}], "anim": [{"from": "producer-processor", "to": "metadata-service", "tone": "internal"}, {"from": "producer-processor", "to": "message-service", "tone": "internal"}], "log": "进入 Broker 通信层"}, {"id": "produce-4", "title": "Cluster/Local MessageService 调用 Broker", "thread": "mq client io / local invoke", "requestCode": "SEND_MESSAGE(_BATCH)", "channel": "ACTIVE", "tone": "outbound", "tag": "Broker 调用", "highlight": ["message-service", "broker-namesrv"], "methods": ["ClusterMessageService.sendMessage(...)", "LocalMessageService.sendMessage(...)"], "anchors": [{"symbol": "ClusterMessageService#sendMessage", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/message/ClusterMessageService.java", "note": "单条/批量发送分支"}], "anim": [{"from": "message-service", "to": "broker-namesrv", "tone": "outbound"}], "log": "Broker 返回 SendResult"}, {"id": "produce-5", "title": "事务预消息写入 TransactionData", "thread": "producer callback", "requestCode": "transaction prepared", "channel": "ACTIVE", "tone": "internal", "tag": "事务补偿", "highlight": ["producer-processor", "transaction-service"], "methods": ["fillTransactionData(...)", "TransactionService.addTransactionDataByBrokerName(...)"], "anchors": [{"symbol": "ProducerProcessor#fillTransactionData", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/processor/ProducerProcessor.java", "note": "事务预消息成功后记录位点"}], "anim": [{"from": "producer-processor", "to": "transaction-service", "tone": "internal"}], "log": "事务回查所需上下文就绪"}, {"id": "produce-6", "title": "映射 SendResult 并回写 gRPC 响应", "thread": "grpc callback", "requestCode": "SendMessageResponse", "channel": "ACTIVE", "tone": "outbound", "tag": "响应回写", "highlight": ["send-activity", "grpc-application"], "methods": ["convertToSendMessageResponse(...)", "GrpcMessagingApplication.writeResponse(...)"], "anchors": [{"symbol": "SendMessageActivity#convertToSendMessageResponse", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/producer/SendMessageActivity.java", "note": "状态码统一映射"}], "anim": [{"from": "send-activity", "to": "grpc-application", "tone": "outbound"}], "log": "生产流程完成"}]}, "consume": {"label": "子流程：消费 POP/ACK", "steps": [{"id": "consume-1", "title": "ReceiveMessageActivity 计算 polling/invisible", "thread": "grpc consumer executor", "requestCode": "ReceiveMessage", "channel": "ACTIVE", "tone": "inbound", "tag": "POP 入口", "highlight": ["receive-activity", "grpc-settings-manager"], "methods": ["ReceiveMessageActivity.receiveMessage(...)", "GrpcClientSettingsManager.getClientSettings(...)", "validateInvisibleTime(...)"], "anchors": [{"symbol": "ReceiveMessageActivity#receiveMessage", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/consumer/ReceiveMessageActivity.java", "note": "deadline 与长轮询时间裁剪"}], "anim": [{"from": "grpc-settings-manager", "to": "receive-activity", "tone": "inbound"}], "log": "完成 POP 参数准备"}, {"id": "consume-2", "title": "ConsumerProcessor 构建 POP 请求访问 Broker", "thread": "consumerProcessorExecutor", "requestCode": "POP_MESSAGE", "channel": "ACTIVE", "tone": "internal", "tag": "POP 执行", "highlight": ["receive-activity", "consumer-processor", "message-service", "broker-namesrv"], "methods": ["ConsumerProcessor.popMessage(...)", "PopMessageRequestHeader", "MessageService.popMessage(...)"], "anchors": [{"symbol": "ConsumerProcessor#popMessage", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/processor/ConsumerProcessor.java", "note": "按 topicRoute 选择可读队列"}], "anim": [{"from": "receive-activity", "to": "consumer-processor", "tone": "internal"}, {"from": "consumer-processor", "to": "message-service", "tone": "internal"}, {"from": "message-service", "to": "broker-namesrv", "tone": "outbound"}], "log": "收到 POP 结果并进入过滤阶段"}, {"id": "consume-3", "title": "过滤结果触发 MATCH/ACK/DLQ 分支", "thread": "consumerProcessorExecutor", "requestCode": "POP filter", "channel": "ACTIVE", "tone": "internal", "tag": "结果过滤", "highlight": ["consumer-processor", "producer-processor", "message-service"], "methods": ["PopMessageResultFilter.filterMessage(...)", "messagingProcessor.ackMessage(...)", "messagingProcessor.forwardMessageToDeadLetterQueue(...)"], "anchors": [{"symbol": "PopMessageResultFilterImpl", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/consumer/PopMessageResultFilterImpl.java", "note": "可按重试次数决定入 DLQ"}], "anim": [{"from": "consumer-processor", "to": "message-service", "tone": "internal"}, {"from": "consumer-processor", "to": "producer-processor", "tone": "internal"}], "log": "不匹配消息会被自动处理"}, {"id": "consume-4", "title": "autoRenew 场景登记 receipt handle", "thread": "grpc consumer executor", "requestCode": "ReceiveMessage(autoRenew)", "channel": "ACTIVE", "tone": "internal", "tag": "句柄登记", "highlight": ["receive-activity", "receipt-handle-processor", "receipt-handle-manager"], "methods": ["messagingProcessor.addReceiptHandle(...)", "ReceiptHandleProcessor.addReceiptHandle(...)", "DefaultReceiptHandleManager.addReceiptHandle(...)"], "anchors": [{"symbol": "DefaultReceiptHandleManager#addReceiptHandle", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/receipt/DefaultReceiptHandleManager.java", "note": "channel+group 维度存储句柄"}], "anim": [{"from": "receive-activity", "to": "receipt-handle-processor", "tone": "internal"}, {"from": "receipt-handle-processor", "to": "receipt-handle-manager", "tone": "internal"}], "log": "为 ACK/续期保留最新句柄"}, {"id": "consume-5", "title": "ACK/Batch ACK 优先使用 Proxy 保存句柄", "thread": "grpc consumer executor", "requestCode": "AckMessage", "channel": "ACTIVE", "tone": "internal", "tag": "确认消费", "highlight": ["ack-activity", "consumer-processor", "message-service"], "methods": ["AckMessageActivity.getHandleString(...)", "messagingProcessor.ackMessage(...) / batchAckMessage(...)", "ConsumerProcessor.batchAckMessage(...)"], "anchors": [{"symbol": "AckMessageActivity#ackMessageInBatch", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/consumer/AckMessageActivity.java", "note": "按 broker 分组批量确认"}], "anim": [{"from": "ack-activity", "to": "consumer-processor", "tone": "internal"}, {"from": "consumer-processor", "to": "message-service", "tone": "internal"}], "log": "ACK 结果聚合后返回客户端"}, {"id": "consume-6", "title": "ChangeInvisibleDuration 更新可见性并返回新句柄", "thread": "grpc consumer executor", "requestCode": "ChangeInvisibleDuration", "channel": "ACTIVE", "tone": "outbound", "tag": "可见性变更", "highlight": ["ack-activity", "consumer-processor", "message-service", "grpc-application"], "methods": ["ChangeInvisibleDurationActivity.changeInvisibleDuration(...)", "ConsumerProcessor.changeInvisibleTime(...)", "GrpcMessagingApplication.writeResponse(...)"], "anchors": [{"symbol": "ChangeInvisibleDurationActivity", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/consumer/ChangeInvisibleDurationActivity.java", "note": "返回 Broker 新句柄"}], "anim": [{"from": "ack-activity", "to": "consumer-processor", "tone": "outbound"}, {"from": "consumer-processor", "to": "message-service", "tone": "outbound"}, {"from": "consumer-processor", "to": "grpc-application", "tone": "outbound"}], "log": "消费可见性控制链路闭环"}]}, "renew": {"label": "子流程：回执续期", "steps": [{"id": "renew-1", "title": "ReceiptHandleProcessor 注入续期事件监听", "thread": "main", "requestCode": "init", "channel": "ACTIVE", "tone": "internal", "tag": "续期初始化", "highlight": ["receipt-handle-processor", "receipt-handle-manager", "consumer-processor"], "methods": ["new ReceiptHandleProcessor(...)", "new DefaultReceiptHandleManager(..., eventListener)", "eventListener -> messagingProcessor.changeInvisibleTime(...)"], "anchors": [{"symbol": "ReceiptHandleProcessor#ReceiptHandleProcessor", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/processor/ReceiptHandleProcessor.java", "note": "RenewEvent -> changeInvisibleTime"}], "anim": [{"from": "receipt-handle-processor", "to": "receipt-handle-manager", "tone": "internal"}], "log": "续期桥接组件初始化完成"}, {"id": "renew-2", "title": "定时扫描句柄并识别离线客户端", "thread": "RenewalScheduledThread", "requestCode": "renew schedule", "channel": "ACTIVE/STALE", "tone": "internal", "tag": "定时扫描", "highlight": ["receipt-handle-manager", "cluster-consumer-manager"], "methods": ["scheduleRenewTask()", "clientIsOffline(groupKey)", "clearGroup(key)"], "anchors": [{"symbol": "DefaultReceiptHandleManager#scheduleRenewTask", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/receipt/DefaultReceiptHandleManager.java", "note": "renewAheadTime 触发续期"}], "anim": [{"from": "receipt-handle-manager", "to": "cluster-consumer-manager", "tone": "internal"}], "log": "离线客户端句柄会被清理"}, {"id": "renew-3", "title": "续期任务通过 worker 线程执行", "thread": "RenewalWorkerThread", "requestCode": "renew submit", "channel": "ACTIVE", "tone": "internal", "tag": "异步续期", "highlight": ["receipt-handle-manager", "consumer-processor", "message-service"], "methods": ["renewalWorkerService.submit(...)", "startRenewMessage(...)", "eventListener.fireEvent(new RenewEvent(...))"], "anchors": [{"symbol": "DefaultReceiptHandleManager#startRenewMessage", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/receipt/DefaultReceiptHandleManager.java", "note": "续期失败可重试"}], "anim": [{"from": "receipt-handle-manager", "to": "consumer-processor", "tone": "internal"}, {"from": "consumer-processor", "to": "message-service", "tone": "internal"}], "log": "续期请求发送到 Broker"}, {"id": "renew-4", "title": "续期结果驱动句柄状态机", "thread": "renew callback", "requestCode": "renew ack", "channel": "ACTIVE", "tone": "internal", "tag": "状态更新", "highlight": ["receipt-handle-manager"], "methods": ["updateReceiptHandle(...)", "incrementRenewTimes()/incrementAndGetRenewRetryTimes()", "renewExceptionNeedRetry(...)"], "anchors": [{"symbol": "DefaultReceiptHandleManager#renewExceptionNeedRetry", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/receipt/DefaultReceiptHandleManager.java", "note": "部分异常不重试"}], "anim": [{"from": "consumer-processor", "to": "receipt-handle-manager", "tone": "internal"}], "log": "成功更新句柄，失败走重试/终止分支"}, {"id": "renew-5", "title": "达到阈值触发 STOP_RENEW/CLEAR_GROUP", "thread": "RenewalWorkerThread", "requestCode": "stop renew", "channel": "ACTIVE/CLOSED", "tone": "outbound", "tag": "终止与清理", "highlight": ["receipt-handle-manager", "metadata-service", "message-service"], "methods": ["metadataService.getSubscriptionGroupConfig(...)", "RenewEvent.EventType.STOP_RENEW", "clearAllHandle()"], "anchors": [{"symbol": "DefaultReceiptHandleManager#clearGroup", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/receipt/DefaultReceiptHandleManager.java", "note": "客户端下线时集中清理"}], "anim": [{"from": "receipt-handle-manager", "to": "metadata-service", "tone": "outbound"}, {"from": "receipt-handle-manager", "to": "message-service", "tone": "outbound"}], "log": "句柄生命周期收敛完成"}]}, "client": {"label": "子流程：客户端治理", "steps": [{"id": "client-1", "title": "Telemetry SETTINGS 建立会话与注册关系", "thread": "grpc clientManager executor", "requestCode": "Telemetry(settings)", "channel": "ACTIVE", "tone": "inbound", "tag": "设置同步", "highlight": ["client-activity", "grpc-settings-manager", "grpc-channel-manager", "client-processor"], "methods": ["processAndWriteClientSettings(...)", "grpcClientSettingsManager.updateClientSettings(...)", "registerProducer/registerConsumer"], "anchors": [{"symbol": "ClientActivity#processAndWriteClientSettings", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/client/ClientActivity.java", "note": "settings 写入并回推确认"}], "anim": [{"from": "client-activity", "to": "grpc-settings-manager", "tone": "inbound"}, {"from": "client-activity", "to": "grpc-channel-manager", "tone": "inbound"}, {"from": "client-activity", "to": "client-processor", "tone": "inbound"}], "log": "客户端会话信息建立"}, {"id": "client-2", "title": "Heartbeat 按客户端类型刷新注册", "thread": "grpc clientManager executor", "requestCode": "Heartbeat", "channel": "ACTIVE", "tone": "internal", "tag": "心跳续命", "highlight": ["client-activity", "client-processor", "cluster-consumer-manager"], "methods": ["ClientActivity.heartbeat(...)", "registerProducer/registerConsumer", "ClusterConsumerManager.registerConsumer(...)"], "anchors": [{"symbol": "ClientActivity#heartbeat", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/client/ClientActivity.java", "note": "producer/consumer 分支处理"}], "anim": [{"from": "client-activity", "to": "client-processor", "tone": "internal"}, {"from": "client-processor", "to": "cluster-consumer-manager", "tone": "internal"}], "log": "心跳成功后返回 OK"}, {"id": "client-3", "title": "HeartbeatSyncer 广播消费者注册变更", "thread": "HeartbeatSyncer thread pool", "requestCode": "system heartbeat topic", "channel": "ACTIVE", "tone": "outbound", "tag": "跨 Proxy 同步", "highlight": ["cluster-consumer-manager", "heartbeat-syncer", "broker-namesrv", "topic-route-service"], "methods": ["HeartbeatSyncer.onConsumerRegister/onConsumerUnRegister", "AbstractSystemMessageSyncer.sendSystemMessage(...)", "consumeMessage(...)"], "anchors": [{"symbol": "HeartbeatSyncer", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/sysmessage/HeartbeatSyncer.java", "note": "通过系统主题同步消费者状态"}], "anim": [{"from": "cluster-consumer-manager", "to": "heartbeat-syncer", "tone": "outbound"}, {"from": "heartbeat-syncer", "to": "broker-namesrv", "tone": "outbound"}], "log": "多 Proxy 节点视图一致"}, {"id": "client-4", "title": "GrpcChannelManager 管理 relay nonce future", "thread": "GrpcChannelManager_ scheduler", "requestCode": "relay response", "channel": "ACTIVE", "tone": "internal", "tag": "Relay 会话", "highlight": ["client-activity", "grpc-channel-manager", "relay-service"], "methods": ["addResponseFuture(...) / getAndRemoveResponseFuture(...)", "scanExpireResultFuture()", "reportThreadStackTrace/reportVerifyMessageResult"], "anchors": [{"symbol": "GrpcChannelManager#scanExpireResultFuture", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/channel/GrpcChannelManager.java", "note": "超时 future 返回 SYSTEM_BUSY"}], "anim": [{"from": "client-activity", "to": "grpc-channel-manager", "tone": "internal"}, {"from": "grpc-channel-manager", "to": "relay-service", "tone": "internal"}], "log": "诊断请求结果与 nonce 对齐"}, {"id": "client-5", "title": "notifyClientTermination 与断链事件触发清理", "thread": "grpc + channel events", "requestCode": "NotifyClientTermination/channel close", "channel": "CLOSED", "tone": "outbound", "tag": "会话清理", "highlight": ["client-activity", "grpc-settings-manager", "grpc-channel-manager", "client-processor", "cluster-consumer-manager"], "methods": ["notifyClientTermination(...)", "removeAndGetClientSettings(...)", "ClientManagerActivity.doChannelCloseEvent(...)"], "anchors": [{"symbol": "ClientManagerActivity#doChannelCloseEvent", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/remoting/activity/ClientManagerActivity.java", "note": "底层连接关闭时移除 remoting 子通道"}], "anim": [{"from": "client-activity", "to": "grpc-settings-manager", "tone": "outbound"}, {"from": "client-activity", "to": "grpc-channel-manager", "tone": "outbound"}, {"from": "client-processor", "to": "cluster-consumer-manager", "tone": "outbound"}], "log": "客户端治理流程闭环"}]}, "transaction": {"label": "子流程：事务链路", "steps": [{"id": "transaction-1", "title": "事务预消息成功后写 TransactionData", "thread": "producer callback", "requestCode": "SendMessage(transaction)", "channel": "ACTIVE", "tone": "internal", "tag": "事务记录", "highlight": ["producer-processor", "transaction-service", "message-service"], "methods": ["fillTransactionData(...)", "TransactionService.addTransactionDataByBrokerName(...)"], "anchors": [{"symbol": "AbstractTransactionService#addTransactionDataByBrokerName", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/transaction/AbstractTransactionService.java", "note": "记录 brokerName + offsets + transactionId"}], "anim": [{"from": "producer-processor", "to": "transaction-service", "tone": "internal"}], "log": "事务回查上下文已建立"}, {"id": "transaction-2", "title": "ClusterTransactionService 周期发送事务心跳", "thread": "TxHeartbeatServiceThread", "requestCode": "transaction heartbeat", "channel": "ACTIVE", "tone": "outbound", "tag": "事务心跳", "highlight": ["transaction-service", "topic-route-service", "broker-namesrv"], "methods": ["addTransactionSubscription(...)", "scanProducerHeartBeat()", "sendHeartBeatToCluster(...)"], "anchors": [{"symbol": "ClusterTransactionService#scanProducerHeartBeat", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/transaction/ClusterTransactionService.java", "note": "按 group->cluster 批量发心跳"}], "anim": [{"from": "transaction-service", "to": "topic-route-service", "tone": "outbound"}, {"from": "transaction-service", "to": "broker-namesrv", "tone": "outbound"}], "log": "事务生产者活跃信息保持同步"}, {"id": "transaction-3", "title": "Broker 回查通过 RelayService 关联事务上下文", "thread": "proxy relay", "requestCode": "CHECK_TRANSACTION_STATE", "channel": "ACTIVE", "tone": "inbound", "tag": "回查入站", "highlight": ["broker-namesrv", "relay-service", "transaction-service", "grpc-channel-manager"], "methods": ["processCheckTransactionState(...)", "addTransactionDataByBrokerAddr(...)", "new RelayData<>(...)"], "anchors": [{"symbol": "AbstractProxyRelayService#processCheckTransactionState", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/relay/AbstractProxyRelayService.java", "note": "绑定回查请求与事务数据"}], "anim": [{"from": "broker-namesrv", "to": "relay-service", "tone": "inbound"}, {"from": "relay-service", "to": "transaction-service", "tone": "internal"}, {"from": "relay-service", "to": "grpc-channel-manager", "tone": "internal"}], "log": "回查请求进入 Proxy relay 编排"}, {"id": "transaction-4", "title": "ProxyChannel/GrpcClientChannel 下发回查命令到客户端", "thread": "client channel", "requestCode": "RecoverOrphanedTransactionCommand", "channel": "ACTIVE", "tone": "outbound", "tag": "回推客户端", "highlight": ["relay-service", "grpc-channel-manager", "client-activity"], "methods": ["ProxyChannel.writeAndFlush(...)", "GrpcClientChannel.processCheckTransaction(...)", "writeTelemetryCommand(...)"], "anchors": [{"symbol": "GrpcClientChannel#processCheckTransaction", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/grpc/v2/channel/GrpcClientChannel.java", "note": "写 telemetry recover command"}], "anim": [{"from": "relay-service", "to": "grpc-channel-manager", "tone": "outbound"}, {"from": "grpc-channel-manager", "to": "client-activity", "tone": "outbound"}], "log": "客户端拿到事务回查请求"}, {"id": "transaction-5", "title": "EndTransaction 请求回传并下发 Broker", "thread": "grpc/remoting txn executor", "requestCode": "EndTransaction", "channel": "ACTIVE", "tone": "outbound", "tag": "事务收敛", "highlight": ["txn-activity", "transaction-processor", "transaction-service", "message-service", "broker-namesrv"], "methods": ["TransactionProcessor.endTransaction(...)", "genEndTransactionRequestHeader(...)", "MessageService.endTransactionOneway(...)"], "anchors": [{"symbol": "TransactionProcessor#endTransaction", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/processor/TransactionProcessor.java", "note": "根据 transaction status 映射 commitOrRollback"}], "anim": [{"from": "txn-activity", "to": "transaction-processor", "tone": "internal"}, {"from": "transaction-processor", "to": "message-service", "tone": "outbound"}, {"from": "message-service", "to": "broker-namesrv", "tone": "outbound"}], "log": "事务状态提交完成"}]}, "remoting": {"label": "子流程：Remoting 多协议与队列治理", "steps": [{"id": "remoting-1", "title": "注册 requestCode -> activity + executor", "thread": "main", "requestCode": "registerProcessor", "channel": "ACTIVE", "tone": "internal", "tag": "请求码路由", "highlight": ["remoting-protocol-server", "remoting-activities", "remoting-executors"], "methods": ["registerRemotingServer(...)", "remotingServer.registerProcessor(RequestCode.*, activity, executor)"], "anchors": [{"symbol": "RemotingProtocolServer#registerRemotingServer", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/remoting/RemotingProtocolServer.java", "note": "不同请求码绑定不同线程池"}], "anim": [{"from": "remoting-protocol-server", "to": "remoting-activities", "tone": "internal"}, {"from": "remoting-protocol-server", "to": "remoting-executors", "tone": "internal"}], "log": "remoting 请求路由表完成初始化"}, {"id": "remoting-2", "title": "协议协商：PRI 前缀走 HTTP2 Proxy，其余走 remoting", "thread": "netty decode", "requestCode": "protocol negotiation", "channel": "ACTIVE", "tone": "inbound", "tag": "协议协商", "highlight": ["remoting-server", "protocol-negotiation", "remoting-protocol-server"], "methods": ["ProtocolNegotiationHandler.decode(...)", "Http2ProtocolProxyHandler.match/config(...)", "RemotingProtocolHandler.config(...)"], "anchors": [{"symbol": "ProtocolNegotiationHandler#decode", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/remoting/protocol/ProtocolNegotiationHandler.java", "note": "4 字节预读匹配协议"}], "anim": [{"from": "remoting-server", "to": "protocol-negotiation", "tone": "inbound"}, {"from": "protocol-negotiation", "to": "remoting-protocol-server", "tone": "inbound"}], "log": "同端口多协议识别完成"}, {"id": "remoting-3", "title": "Activity 通过 RequestBrokerProcessor 转发 Broker 请求", "thread": "remoting executors", "requestCode": "SEND/PULL/OFFSET/LOCK", "channel": "ACTIVE", "tone": "internal", "tag": "请求转发", "highlight": ["remoting-activities", "request-broker-processor", "message-service", "broker-namesrv"], "methods": ["AbstractRemotingActivity.request(...)", "messagingProcessor.request/requestOneway(...)", "RequestBrokerProcessor.request(...)"], "anchors": [{"symbol": "AbstractRemotingActivity#request", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/remoting/activity/AbstractRemotingActivity.java", "note": "解析 bname 后转发"}], "anim": [{"from": "remoting-activities", "to": "request-broker-processor", "tone": "internal"}, {"from": "request-broker-processor", "to": "message-service", "tone": "internal"}, {"from": "message-service", "to": "broker-namesrv", "tone": "outbound"}], "log": "请求经通用转发器发送到目标 Broker"}, {"id": "remoting-4", "title": "队列治理：慢请求监控 + 超时清理", "thread": "RemotingServerScheduler", "requestCode": "queue governance", "channel": "ACTIVE", "tone": "internal", "tag": "过载保护", "highlight": ["request-cleaner", "remoting-executors", "threadpool-monitor"], "methods": ["headSlowTimeMills(...)", "cleanExpiredRequestInQueue(...)", "RequestTask.returnResponse(SYSTEM_BUSY, ...)"], "anchors": [{"symbol": "RemotingProtocolServer#cleanExpiredRequestInQueue", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/remoting/RemotingProtocolServer.java", "note": "队头等待超时请求直接回 SYSTEM_BUSY"}], "anim": [{"from": "threadpool-monitor", "to": "request-cleaner", "tone": "internal"}, {"from": "request-cleaner", "to": "remoting-executors", "tone": "internal"}], "log": "防止排队请求长期堆积"}, {"id": "remoting-5", "title": "invokeToClient 支撑事务回查与消费诊断反向调用", "thread": "remoting async callback", "requestCode": "CHECK_TXN/GET_RUNNING_INFO/CONSUME_DIRECT", "channel": "ACTIVE", "tone": "outbound", "tag": "反向调用", "highlight": ["remoting-protocol-server", "relay-service", "grpc-channel-manager", "client-activity"], "methods": ["invokeToClient(...)", "ProxyChannel.writeAndFlush(...)", "GrpcClientChannel.processGetConsumerRunningInfo/processConsumeMessageDirectly"], "anchors": [{"symbol": "ProxyChannel#writeAndFlush", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/service/relay/ProxyChannel.java", "note": "拦截并处理回查/诊断请求"}], "anim": [{"from": "relay-service", "to": "remoting-protocol-server", "tone": "outbound"}, {"from": "remoting-protocol-server", "to": "grpc-channel-manager", "tone": "outbound"}, {"from": "grpc-channel-manager", "to": "client-activity", "tone": "outbound"}], "log": "Proxy 可主动回推请求到客户端"}, {"id": "remoting-6", "title": "异常映射与响应回写客户端", "thread": "remoting response", "requestCode": "response/error", "channel": "ACTIVE", "tone": "outbound", "tag": "响应回写", "highlight": ["remoting-activities", "message-service", "remoting-protocol-server"], "methods": ["writeErrResponse(...)", "writeResponse(...)", "response.addExtField(MSG_REGION/TRACE_SWITCH)"], "anchors": [{"symbol": "AbstractRemotingActivity#writeResponse", "location": "proxy/src/main/java/org/apache/rocketmq/proxy/remoting/activity/AbstractRemotingActivity.java", "note": "统一回包扩展字段与 opaque"}], "anim": [{"from": "message-service", "to": "remoting-activities", "tone": "outbound"}, {"from": "remoting-activities", "to": "remoting-protocol-server", "tone": "outbound"}], "log": "Remoting 子流程闭环"}]}}, "nodeDescriptions": {"proxy-startup": "ProxyStartup：启动入口，负责解析命令行、加载配置、创建 MessagingProcessor、启动 gRPC/Remoting 并注册 shutdown hook", "config-manager": "ConfigurationManager：环境与配置初始化（main）", "mode-select": "ProxyMode：local / cluster 模式判定（main）", "service-manager": "ServiceManagerFactory：Local/ClusterServiceManager 构建（main）", "messaging-processor": "DefaultMessagingProcessor：统一编排 ProducerProcessor、ConsumerProcessor、TransactionProcessor、ClientProcessor、RequestBrokerProcessor、ReceiptHandleProcessor", "metrics-manager": "ProxyMetricsManager：指标出口与 Meter 初始化（main）", "grpc-server": "GrpcServer：v2 API 服务监听（grpc boss/worker）", "remoting-server": "RemotingProtocolServer：remoting 入口与请求码分发（netty server）", "broker-controller": "BrokerController (local)：本地模式内嵌 Broker（local mode）", "threadpool-monitor": "ThreadPoolMonitor：线程池监控与水位日志（common infra）", "grpc-interceptors": "gRPC Interceptors：GlobalException / Context / Header（grpc inbound）", "grpc-pipeline": "gRPC RequestPipeline：ContextInit + AuthN/AuthZ（grpc pipeline）", "grpc-application": "GrpcMessagingApplication：API 分发与状态封装（grpc service）", "grpc-executors": "gRPC Thread Pools：route/producer/consumer/client/txn（thread pools）", "remoting-protocol-server": "RemotingProtocolServer：registerProcessor + invokeToClient（remoting core）", "protocol-negotiation": "ProtocolNegotiationHandler：4 字节预读识别协议，PRI 前缀走 HTTP2 proxy，其余回落 Remoting", "remoting-pipeline": "Remoting Pipeline：ContextInit + AuthN/AuthZ（request pipe）", "remoting-activities": "Remoting Activities：Send/Pull/Client/Consumer/Txn（activity layer）", "remoting-executors": "Remoting Executors：send/pull/heartbeat/offset/default（thread pools）", "request-cleaner": "Queue Cleaner：cleanExpiredRequestInQueue（timer task）", "auth-metadata": "ProxyAuthenticationMetadataProvider / ProxyAuthorizationMetadataProvider：通过 MetadataService 拉取 User/Acl", "default-grpc-activity": "DefaultGrpcMessingActivity：gRPC 活动聚合入口（grpc activity）", "client-activity": "ClientActivity：telemetry/heartbeat/termination（client mgmt）", "route-activity": "RouteActivity：queryRoute/queryAssignment（route）", "send-activity": "SendMessageActivity：发送前校验与属性构建（producer grpc）", "receive-activity": "ReceiveMessageActivity：POP 长轮询入口（consumer grpc）", "ack-activity": "AckMessageActivity：ACK / Batch ACK（consumer grpc）", "txn-activity": "EndTransactionActivity：事务结束请求入口（txn grpc）", "producer-processor": "ProducerProcessor：队列选择、发送、回调（core producer）", "consumer-processor": "ConsumerProcessor：POP/ACK/Offset/Lock 流程（core consumer）", "transaction-processor": "TransactionProcessor：commit/rollback 转换（core txn）", "request-broker-processor": "RequestBrokerProcessor：通用 Broker 请求转发（core broker req）", "client-processor": "ClientProcessor：Producer/Consumer 注册管理（core client）", "receipt-handle-processor": "ReceiptHandleProcessor：句柄入库与续期事件桥接（core receipt）", "topic-route-service": "TopicRouteService：使用 Caffeine 缓存 Topic 路由，支持 refresh/load 与 MQFaultStrategy 发送故障规避", "metadata-service": "MetadataService：TopicType/Group/User/Acl（service metadata）", "message-service": "MessageService：Cluster/Local 两种实现，负责 send/pop/ack/offset/transaction 等真正 Broker 调用", "transaction-service": "TransactionService：记录事务位点、处理回查上下文、维护事务心跳与订阅", "relay-service": "ProxyRelayService：回查/直连消费转发桥（service relay）", "receipt-handle-manager": "DefaultReceiptHandleManager：按 channel+group 管理 receiptHandle，定时扫描续期，支持 STOP_RENEW/CLEAR_GROUP", "grpc-channel-manager": "GrpcChannelManager：维护 clientId->GrpcClientChannel 和 relay nonce future，超时自动兜底", "grpc-settings-manager": "GrpcClientSettingsManager：Settings 合并与过期清理（grpc settings）", "cluster-consumer-manager": "ClusterConsumerManager：消费者注册与同步扩展（cluster client）", "heartbeat-syncer": "HeartbeatSyncer：ClusterConsumerManager 扩展组件，通过系统主题广播消费者注册/注销，保持多 Proxy 视图一致", "broker-namesrv": "Broker / NameSrv：真实存储与路由源头（remote endpoint）"}, "staticLinks": [["proxy-startup", "config-manager"], ["config-manager", "mode-select"], ["mode-select", "service-manager"], ["service-manager", "messaging-processor"], ["proxy-startup", "threadpool-monitor"], ["messaging-processor", "metrics-manager"], ["messaging-processor", "grpc-server"], ["messaging-processor", "remoting-server"], ["mode-select", "broker-controller"], ["broker-controller", "messaging-processor"], ["grpc-server", "grpc-interceptors"], ["grpc-interceptors", "grpc-pipeline"], ["grpc-pipeline", "grpc-application"], ["grpc-application", "grpc-executors"], ["grpc-application", "default-grpc-activity"], ["remoting-server", "remoting-protocol-server"], ["remoting-protocol-server", "protocol-negotiation"], ["protocol-negotiation", "remoting-pipeline"], ["remoting-pipeline", "remoting-activities"], ["remoting-activities", "remoting-executors"], ["remoting-executors", "request-cleaner"], ["grpc-pipeline", "auth-metadata"], ["remoting-pipeline", "auth-metadata"], ["default-grpc-activity", "client-activity"], ["default-grpc-activity", "route-activity"], ["default-grpc-activity", "send-activity"], ["default-grpc-activity", "receive-activity"], ["default-grpc-activity", "ack-activity"], ["default-grpc-activity", "txn-activity"], ["send-activity", "producer-processor"], ["receive-activity", "consumer-processor"], ["ack-activity", "consumer-processor"], ["txn-activity", "transaction-processor"], ["remoting-activities", "request-broker-processor"], ["client-activity", "client-processor"], ["receive-activity", "receipt-handle-processor"], ["producer-processor", "topic-route-service"], ["consumer-processor", "topic-route-service"], ["route-activity", "topic-route-service"], ["route-activity", "metadata-service"], ["client-activity", "metadata-service"], ["producer-processor", "message-service"], ["consumer-processor", "message-service"], ["request-broker-processor", "message-service"], ["transaction-processor", "message-service"], ["transaction-processor", "transaction-service"], ["producer-processor", "transaction-service"], ["grpc-channel-manager", "relay-service"], ["relay-service", "transaction-service"], ["receipt-handle-processor", "receipt-handle-manager"], ["receipt-handle-manager", "message-service"], ["client-activity", "grpc-channel-manager"], ["client-activity", "grpc-settings-manager"], ["client-processor", "cluster-consumer-manager"], ["cluster-consumer-manager", "heartbeat-syncer"], ["topic-route-service", "broker-namesrv"], ["metadata-service", "broker-namesrv"], ["message-service", "broker-namesrv"], ["heartbeat-syncer", "broker-namesrv"]], "scenarioOrder": ["main", "ingress", "route", "produce", "consume", "renew", "client", "transaction", "remoting"]};
+
+    const state = {
+      scenario: "main",
+      stepIndex: 0,
+      currentIndex: -1,
+      stepToken: 0,
+      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      selectedNode: "",
+      log: []
+    };
+
+    const els = {
+      statusStep: document.getElementById("status-step"),
+      statusThread: document.getElementById("status-thread"),
+      statusRequest: document.getElementById("status-request"),
+      statusChannel: document.getElementById("status-channel"),
+      scenarioBadge: document.getElementById("scenarioBadge"),
+      activeTag: document.getElementById("activeTag"),
+      methodList: document.getElementById("methodList"),
+      sourceAnchorList: document.getElementById("sourceAnchorList"),
+      nodeInspector: document.getElementById("nodeInspector"),
+      flowSteps: document.getElementById("flowSteps"),
+      logList: document.getElementById("logList"),
+      stepRange: document.getElementById("stepRange"),
+      stepProgressText: document.getElementById("stepProgressText"),
+      stepProgressPercent: document.getElementById("stepProgressPercent"),
+      scenarioButtons: Array.from(document.querySelectorAll("[data-scenario]")),
+      btnReset: document.getElementById("btn-reset"),
+      btnPrev: document.getElementById("btn-prev"),
+      btnNext: document.getElementById("btn-next")
+    };
+
+    const stageCanvas = document.querySelector(".stage-canvas");
+    const flowLines = document.getElementById("flowLines");
+    const svgNS = "http://www.w3.org/2000/svg";
+    const staticGroup = document.createElementNS(svgNS, "g");
+    const dynamicGroup = document.createElementNS(svgNS, "g");
+    flowLines.appendChild(staticGroup);
+    flowLines.appendChild(dynamicGroup);
+
+    const nodeElements = Array.from(document.querySelectorAll(".node"));
+    const nodeById = new Map(nodeElements.map((node) => [node.dataset.node, node]));
+
+    function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+    function getActiveSteps() { return data.scenarios[state.scenario].steps; }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function getNodeCenter(nodeId) {
+      const node = nodeById.get(nodeId);
+      if (!node || !stageCanvas) return null;
+      const stageRect = stageCanvas.getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
+      return { x: rect.left - stageRect.left + rect.width / 2, y: rect.top - stageRect.top + rect.height / 2 };
+    }
+
+    function drawStaticLinks() {
+      const rect = stageCanvas.getBoundingClientRect();
+      flowLines.setAttribute("width", String(rect.width));
+      flowLines.setAttribute("height", String(rect.height));
+      flowLines.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+      while (staticGroup.firstChild) staticGroup.removeChild(staticGroup.firstChild);
+      data.staticLinks.forEach(([fromId, toId]) => {
+        const from = getNodeCenter(fromId); const to = getNodeCenter(toId);
+        if (!from || !to) return;
+        const line = document.createElementNS(svgNS, "line");
+        line.setAttribute("x1", String(from.x)); line.setAttribute("y1", String(from.y));
+        line.setAttribute("x2", String(to.x)); line.setAttribute("y2", String(to.y));
+        line.classList.add("flow-line", "static");
+        staticGroup.appendChild(line);
+      });
+    }
+
+    function clearDynamicLayer() { while (dynamicGroup.firstChild) dynamicGroup.removeChild(dynamicGroup.firstChild); }
+
+    function clearNodeActiveStates() {
+      nodeElements.forEach((node) => node.classList.remove("active", "inbound", "internal", "outbound"));
+      if (state.selectedNode && nodeById.has(state.selectedNode)) nodeById.get(state.selectedNode).classList.add("selected");
+    }
+
+    function highlightStep(step) {
+      (step.highlight || []).forEach((id) => {
+        const node = nodeById.get(id);
+        if (!node) return;
+        node.classList.add("active");
+        if (step.tone) node.classList.add(step.tone);
+      });
+    }
+
+    function toneLabel(tone) {
+      if (tone === "outbound") return "出站阶段";
+      if (tone === "internal") return "内部处理阶段";
+      return "入站阶段";
+    }
+
+    function updateStatus(step) {
+      const total = getActiveSteps().length;
+      if (!step) {
+        els.statusStep.textContent = `当前步骤: - / ${total}`;
+        els.statusThread.textContent = "线程: -";
+        els.statusRequest.textContent = "请求/动作: -";
+        els.statusChannel.textContent = "连接状态: -";
+        return;
+      }
+      const indexText = `${state.currentIndex + 1}/${total}`;
+      els.statusStep.textContent = `当前步骤: ${indexText} ${step.title}`;
+      els.statusThread.textContent = `线程: ${step.thread || "-"}`;
+      els.statusRequest.textContent = `请求/动作: ${step.requestCode || "-"}`;
+      els.statusChannel.textContent = `连接状态: ${step.channel || "-"}`;
+    }
+
+    function renderTag(step) {
+      const tone = step?.tone || "inbound";
+      const label = step?.tag || toneLabel(tone);
+      els.activeTag.className = `tag ${tone}`;
+      els.activeTag.textContent = label;
+    }
+
+    function renderMethods(step) {
+      if (!step || !step.methods || !step.methods.length) {
+        els.methodList.innerHTML = "<li>当前步骤没有额外调用链说明</li>";
+        return;
+      }
+      els.methodList.innerHTML = step.methods.map((m) => `<li>${escapeHtml(m)}</li>`).join("");
+    }
+
+    function renderAnchors(step) {
+      if (!step || !step.anchors || !step.anchors.length) {
+        els.sourceAnchorList.innerHTML = "<li>当前步骤没有额外源码锚点</li>";
+        return;
+      }
+      els.sourceAnchorList.innerHTML = step.anchors.map((a) => `<li><span class="symbol">${escapeHtml(a.symbol || "-")}</span><span class="location">${escapeHtml(a.location || "-")}</span><span class="note">${escapeHtml(a.note || "")}</span></li>`).join("");
+    }
+
+    function renderScenarioButtons() {
+      els.scenarioButtons.forEach((button) => {
+        const active = button.dataset.scenario === state.scenario;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+      els.scenarioBadge.textContent = `场景：${data.scenarios[state.scenario].label}`;
+    }
+
+    function renderProgress() {
+      const total = getActiveSteps().length;
+      const executed = state.stepIndex;
+      const percent = total ? Math.round((executed / total) * 100) : 0;
+      els.stepRange.max = String(total);
+      els.stepRange.value = String(executed);
+      els.stepProgressText.textContent = `进度 ${executed} / ${total}`;
+      els.stepProgressPercent.textContent = `${percent}%`;
+    }
+
+    function renderStepCards() {
+      const steps = getActiveSteps();
+      if (!steps.length) { els.flowSteps.innerHTML = '<p class="empty">当前场景没有步骤</p>'; return; }
+      els.flowSteps.innerHTML = steps.map((step, index) => {
+        const tone = step.tone || "inbound";
+        const active = index === state.currentIndex ? "active" : "";
+        return `<div class="flow-step ${active}" data-step-index="${index}" role="button" tabindex="0" aria-label="跳转到步骤 ${index + 1}">
+` +
+               `<div class="step-title"><span>${index + 1}.</span><span>${escapeHtml(step.title)}</span></div>
+` +
+               `<div class="step-meta"><span>${escapeHtml(step.thread || "-")}</span><span>${escapeHtml(step.requestCode || "-")}</span></div>
+` +
+               `<span class="tag ${tone}">${escapeHtml(step.tag || toneLabel(tone))}</span></div>`;
+      }).join("");
+      Array.from(els.flowSteps.querySelectorAll(".flow-step")).forEach((card) => {
+        card.addEventListener("click", () => { pausePlayback(); restoreProgress(Number(card.dataset.stepIndex) + 1); });
+        card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); card.click(); } });
+      });
+    }
+
+    function formatLogLine(step, idx) {
+      const tone = step.tone || "inbound";
+      return `[${String(idx + 1).padStart(2, "0")}] [${tone.toUpperCase()}] ${step.title} · ${step.log || ""}`;
+    }
+
+    function renderLog() {
+      if (!state.log.length) { els.logList.innerHTML = '<div class="line">等待执行步骤...</div>'; return; }
+      els.logList.innerHTML = state.log.map((line) => `<div class="line">${escapeHtml(line)}</div>`).join("");
+      els.logList.scrollTop = els.logList.scrollHeight;
+    }
+
+    function animateLink(fromId, toId, tone = "inbound", linger = 320, token) {
+      if (state.reducedMotion) return Promise.resolve();
+      const from = getNodeCenter(fromId); const to = getNodeCenter(toId);
+      if (!from || !to || (token !== undefined && token !== state.stepToken)) return Promise.resolve();
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", String(from.x)); line.setAttribute("y1", String(from.y));
+      line.setAttribute("x2", String(to.x)); line.setAttribute("y2", String(to.y));
+      line.classList.add("flow-line", tone);
+      const dot = document.createElementNS(svgNS, "circle");
+      dot.setAttribute("r", "4"); dot.classList.add("flow-dot", tone);
+      dynamicGroup.appendChild(line); dynamicGroup.appendChild(dot);
+      const duration = 640;
+      return new Promise((resolve) => {
+        const startedAt = performance.now();
+        function tick(now) {
+          if (token !== undefined && token !== state.stepToken) { line.remove(); dot.remove(); resolve(); return; }
+          const progress = Math.min(1, (now - startedAt) / duration);
+          dot.setAttribute("cx", String(from.x + (to.x - from.x) * progress));
+          dot.setAttribute("cy", String(from.y + (to.y - from.y) * progress));
+          if (progress < 1) { requestAnimationFrame(tick); return; }
+          setTimeout(() => { line.remove(); dot.remove(); resolve(); }, linger);
+        }
+        requestAnimationFrame(tick);
+      });
+    }
+
+    async function startStepAnimation(step) {
+      if (!step || !step.anim || !step.anim.length || state.reducedMotion) return;
+      const token = state.stepToken;
+      while (token === state.stepToken) {
+        for (const item of step.anim) {
+          if (token !== state.stepToken) return;
+          await animateLink(item.from, item.to, item.tone || step.tone || "inbound", 260, token);
+        }
+        if (token !== state.stepToken) return;
+        await sleep(180);
+      }
+    }
+
+    function applyCurrentStep(step, index, options = {}) {
+      clearDynamicLayer();
+      clearNodeActiveStates();
+      highlightStep(step);
+      state.currentIndex = index;
+      state.stepIndex = index + 1;
+      updateStatus(step);
+      renderTag(step);
+      renderMethods(step);
+      renderAnchors(step);
+      if (!options.silentLog) state.log.push(formatLogLine(step, index));
+      renderLog();
+      renderStepCards();
+      renderProgress();
+      if (!options.noAnimation) { state.stepToken += 1; void startStepAnimation(step); }
+    }
+
+    function restoreProgress(executedCount) {
+      const steps = getActiveSteps();
+      const safeCount = Math.max(0, Math.min(executedCount, steps.length));
+      clearDynamicLayer(); clearNodeActiveStates();
+      state.log = []; state.currentIndex = -1; state.stepIndex = 0; state.stepToken += 1;
+      if (safeCount === 0) {
+        updateStatus(null); renderTag(null); renderMethods(null); renderAnchors(null); renderLog(); renderStepCards(); renderProgress();
+        return;
+      }
+      for (let i = 0; i < safeCount; i += 1) state.log.push(formatLogLine(steps[i], i));
+      const last = safeCount - 1; const step = steps[last];
+      state.currentIndex = last; state.stepIndex = safeCount;
+      highlightStep(step); updateStatus(step); renderTag(step); renderMethods(step); renderAnchors(step);
+      renderLog(); renderStepCards(); renderProgress(); void startStepAnimation(step);
+    }
+
+    function nextStep() {
+      const steps = getActiveSteps();
+      if (state.stepIndex >= steps.length) { pausePlayback(); return; }
+      applyCurrentStep(steps[state.stepIndex], state.stepIndex);
+    }
+
+    function prevStep() { pausePlayback(); restoreProgress(state.stepIndex - 1); }
+    function resetCurrentScenario() { pausePlayback(); restoreProgress(0); }
+
+    function pausePlayback() {
+      state.stepToken += 1;
+      clearDynamicLayer();
+    }
+
+    function setScenario(key) {
+      if (!data.scenarios[key] || key === state.scenario) return;
+      pausePlayback(); state.scenario = key;
+      renderScenarioButtons(); restoreProgress(0);
+    }
+
+    function selectNode(nodeId) {
+      if (!nodeById.has(nodeId)) return;
+      nodeElements.forEach((node) => node.classList.remove("selected"));
+      nodeById.get(nodeId).classList.add("selected");
+      state.selectedNode = nodeId;
+      els.nodeInspector.textContent = data.nodeDescriptions[nodeId] || "暂无该节点说明";
+    }
+
+    function bindEvents() {
+      els.scenarioButtons.forEach((button) => button.addEventListener("click", () => setScenario(button.dataset.scenario)));
+      els.btnReset.addEventListener("click", resetCurrentScenario);
+      els.btnPrev.addEventListener("click", prevStep);
+      els.btnNext.addEventListener("click", () => { pausePlayback(); nextStep(); });
+      els.stepRange.addEventListener("input", (e) => { pausePlayback(); restoreProgress(Number(e.target.value || 0)); });
+      nodeElements.forEach((node) => { node.addEventListener("click", () => selectNode(node.dataset.node)); node.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectNode(node.dataset.node); } }); });
+      window.addEventListener("resize", drawStaticLinks);
+      document.addEventListener("keydown", (e) => {
+        if (e.target && ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
+        if (e.key === "ArrowRight") { e.preventDefault(); pausePlayback(); nextStep(); return; }
+        if (e.key === "ArrowLeft") { e.preventDefault(); prevStep(); return; }
+        if (e.key.toLowerCase() === "r") { e.preventDefault(); resetCurrentScenario(); return; }
+        if (/^[1-9]$/.test(e.key)) {
+          const key = data.scenarioOrder[Number(e.key) - 1];
+          if (!key || !data.scenarios[key]) return;
+          e.preventDefault(); setScenario(key);
+        }
+      });
+      if (window.ResizeObserver) { const obs = new ResizeObserver(drawStaticLinks); obs.observe(stageCanvas); }
+    }
+
+    function init() {
+      renderScenarioButtons(); renderProgress(); renderLog(); renderStepCards();
+      updateStatus(null); renderTag(null); renderMethods(null); renderAnchors(null);
+      drawStaticLinks(); bindEvents();
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -16,15 +16,22 @@
  */
 package org.apache.rocketmq.proxy.common.utils;
 
-import java.util.Set;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
+import java.util.Set;
+
+/**
+ * 过滤工具类<br>
+ * 提供订阅过滤匹配相关能力
+ */
 public class FilterUtils {
     /**
      * Whether the message's tag matches consumerGroup's SubscriptionData
+     * <br>
+     * 判断消息 Tag 是否匹配消费组订阅数据
      *
-     * @param tagsSet, tagSet in {@link SubscriptionData}, tagSet empty means SubscriptionData.SUB_ALL(*)
-     * @param tags,    message's tags, null means not tag attached to the message.
+     * @param tagsSet tagSet in {@link SubscriptionData}, tagSet empty means SubscriptionData.SUB_ALL(*).<br>订阅标签集合为空表示订阅全部
+     * @param tags    message's tags, null means not tag attached to the message.<br>消息标签为空表示无标签
      */
     public static boolean isTagMatched(Set<String> tagsSet, String tags) {
         if (tagsSet.isEmpty()) {

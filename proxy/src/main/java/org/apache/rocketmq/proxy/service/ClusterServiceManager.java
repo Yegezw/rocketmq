@@ -54,27 +54,80 @@ import org.apache.rocketmq.proxy.service.transaction.TransactionService;
 import org.apache.rocketmq.remoting.RPCHook;
 import org.apache.rocketmq.remoting.RemotingClient;
 
+/**
+ * 集群模式服务管理器, 负责组装集群场景下的各项服务组件
+ */
 public class ClusterServiceManager extends AbstractStartAndShutdown implements ServiceManager {
+    /**
+     * Proxy 模块日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
 
+    /**
+     * 集群事务服务
+     */
     protected ClusterTransactionService clusterTransactionService;
+    /**
+     * 生产者管理器
+     */
     protected ProducerManager producerManager;
+    /**
+     * 消费者管理器
+     */
     protected ClusterConsumerManager consumerManager;
+    /**
+     * 主题路由服务
+     */
     protected TopicRouteService topicRouteService;
+    /**
+     * 消息服务
+     */
     protected MessageService messageService;
+    /**
+     * 代理转发服务
+     */
     protected ProxyRelayService proxyRelayService;
+    /**
+     * 集群元数据服务
+     */
     protected ClusterMetadataService metadataService;
+    /**
+     * 管理服务
+     */
     protected AdminService adminService;
 
+    /**
+     * 定时任务线程池
+     */
     protected ScheduledExecutorService scheduledExecutorService;
+    /**
+     * 消息客户端 API 工厂
+     */
     protected MQClientAPIFactory messagingClientAPIFactory;
+    /**
+     * 运维客户端 API 工厂
+     */
     protected MQClientAPIFactory operationClientAPIFactory;
+    /**
+     * 事务客户端 API 工厂
+     */
     protected MQClientAPIFactory transactionClientAPIFactory;
 
+    /**
+     * 构造集群模式服务管理器
+     *
+     * @param rpcHook RPC 钩子
+     */
     public ClusterServiceManager(RPCHook rpcHook) {
         this(rpcHook, null);
     }
 
+    /**
+     * 构造集群模式服务管理器
+     *
+     * @param rpcHook RPC 钩子
+     * @param remotingClientCreator remoting 客户端创建器
+     */
     public ClusterServiceManager(RPCHook rpcHook, ObjectCreator<RemotingClient> remotingClientCreator) {
         ProxyConfig proxyConfig = ConfigurationManager.getProxyConfig();
         NameserverAccessConfig nameserverAccessConfig = new NameserverAccessConfig(proxyConfig.getNamesrvAddr(),
@@ -126,6 +179,9 @@ public class ClusterServiceManager extends AbstractStartAndShutdown implements S
         this.init();
     }
 
+    /**
+     * 初始化管理器依赖与定时任务
+     */
     protected void init() {
         this.producerManager.appendProducerChangeListener(new ProducerChangeListenerImpl());
 
@@ -188,20 +244,43 @@ public class ClusterServiceManager extends AbstractStartAndShutdown implements S
         return this.adminService;
     }
 
+    /**
+     * 消费者 ID 变更监听器实现
+     */
     protected static class ConsumerIdsChangeListenerImpl implements ConsumerIdsChangeListener {
 
+        /**
+         * 处理消费组事件
+         *
+         * @param event 消费组事件
+         * @param group 消费组
+         * @param args 扩展参数
+         */
         @Override
         public void handle(ConsumerGroupEvent event, String group, Object... args) {
 
         }
 
+        /**
+         * 关闭监听器
+         */
         @Override
         public void shutdown() {
 
         }
     }
 
+    /**
+     * 生产者变更监听器实现
+     */
     protected class ProducerChangeListenerImpl implements ProducerChangeListener {
+        /**
+         * 处理生产组事件
+         *
+         * @param event 生产组事件
+         * @param group 生产组
+         * @param clientChannelInfo 客户端通道信息
+         */
         @Override
         public void handle(ProducerGroupEvent event, String group, ClientChannelInfo clientChannelInfo) {
             if (event == ProducerGroupEvent.GROUP_UNREGISTER) {

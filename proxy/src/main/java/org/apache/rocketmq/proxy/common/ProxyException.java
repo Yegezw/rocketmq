@@ -16,15 +16,35 @@
  */
 package org.apache.rocketmq.proxy.common;
 
+/**
+ * Proxy 统一异常类型<br>
+ * 使用内部错误码表达异常语义
+ */
 public class ProxyException extends RuntimeException {
 
+    /**
+     * Proxy 异常码
+     */
     private final ProxyExceptionCode code;
 
+    /**
+     * 构造 Proxy 异常
+     *
+     * @param code 异常码
+     * @param message 异常信息
+     */
     public ProxyException(ProxyExceptionCode code, String message) {
         super(message);
         this.code = code;
     }
 
+    /**
+     * 构造包含根因的 Proxy 异常
+     *
+     * @param code 异常码
+     * @param message 异常信息
+     * @param cause 根因异常
+     */
     public ProxyException(ProxyExceptionCode code, String message, Throwable cause) {
         super(message, cause);
         this.code = code;

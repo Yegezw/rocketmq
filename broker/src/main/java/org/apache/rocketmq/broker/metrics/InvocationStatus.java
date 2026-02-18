@@ -17,12 +17,29 @@
 
 package org.apache.rocketmq.broker.metrics;
 
+/**
+ * 指标调用状态枚举
+ */
 public enum InvocationStatus {
+    /**
+     * 调用成功状态
+     */
     SUCCESS("success"),
+    /**
+     * 调用失败状态
+     */
     FAILURE("failure");
 
+    /**
+     * 状态名称
+     */
     private final String name;
 
+    /**
+     * 初始化调用状态
+     *
+     * @param name 状态名称
+     */
     InvocationStatus(String name) {
         this.name = name;
     }

@@ -23,12 +23,30 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.auth.config.AuthConfig;
 import org.apache.rocketmq.common.MixAll;
 
+/**
+ * Proxy 全局配置管理器
+ */
 public class ConfigurationManager {
+    /**
+     * Proxy Home 环境变量键
+     */
     public static final String RMQ_PROXY_HOME = "RMQ_PROXY_HOME";
+    /**
+     * 默认 Proxy Home 路径
+     */
     protected static final String DEFAULT_RMQ_PROXY_HOME = System.getenv(MixAll.ROCKETMQ_HOME_ENV);
+    /**
+     * Proxy Home 目录
+     */
     protected static String proxyHome;
+    /**
+     * 配置加载器实例
+     */
     protected static Configuration configuration;
 
+    /**
+     * 初始化运行环境路径
+     */
     public static void initEnv() {
         proxyHome = System.getenv(RMQ_PROXY_HOME);
         if (StringUtils.isEmpty(proxyHome)) {
@@ -40,6 +58,11 @@ public class ConfigurationManager {
         }
     }
 
+    /**
+     * 初始化配置加载器并加载配置
+     *
+     * @throws Exception 配置初始化异常
+     */
     public static void intConfig() throws Exception {
         configuration = new Configuration();
         configuration.init();
@@ -57,6 +80,11 @@ public class ConfigurationManager {
         return configuration.getAuthConfig();
     }
 
+    /**
+     * 格式化输出 Proxy 配置
+     *
+     * @return 格式化后的配置 JSON
+     */
     public static String formatProxyConfig() {
         return JSON.toJSONString(ConfigurationManager.getProxyConfig(),
                 SerializerFeature.PrettyFormat, SerializerFeature.WriteMapNullValue, SerializerFeature.WriteDateUseDateFormat, SerializerFeature.WriteNullListAsEmpty);

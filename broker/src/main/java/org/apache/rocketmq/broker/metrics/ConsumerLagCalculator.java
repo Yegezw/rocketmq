@@ -52,21 +52,62 @@ import org.apache.rocketmq.store.DefaultMessageFilter;
 import org.apache.rocketmq.store.MessageStore;
 import org.apache.rocketmq.store.exception.ConsumeQueueException;
 
+/**
+ * 消费堆积与在途消息计算器
+ */
 public class ConsumerLagCalculator {
 
+    /**
+     * Broker 配置
+     */
     private final BrokerConfig brokerConfig;
+    /**
+     * Topic 配置管理器
+     */
     private final TopicConfigManager topicConfigManager;
+    /**
+     * 消费者管理器
+     */
     private final ConsumerManager consumerManager;
+    /**
+     * 消费位点管理器
+     */
     private final ConsumerOffsetManager offsetManager;
+    /**
+     * 消费过滤管理器
+     */
     private final ConsumerFilterManager consumerFilterManager;
+    /**
+     * 订阅组管理器
+     */
     private final SubscriptionGroupManager subscriptionGroupManager;
+    /**
+     * 消息存储接口
+     */
     private final MessageStore messageStore;
+    /**
+     * POP 缓冲合并服务
+     */
     private final PopBufferMergeService popBufferMergeService;
+    /**
+     * POP 长轮询服务
+     */
     private final PopLongPollingService popLongPollingService;
+    /**
+     * POP 飞行中消息计数器
+     */
     private final PopInflightMessageCounter popInflightMessageCounter;
 
+    /**
+     * 日志记录器
+     */
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
 
+    /**
+     * 初始化消费堆积计算器
+     *
+     * @param brokerController Broker 控制器
+     */
     public ConsumerLagCalculator(BrokerController brokerController) {
         this.brokerConfig = brokerController.getBrokerConfig();
         this.topicConfigManager = brokerController.getTopicConfigManager();
@@ -80,12 +121,35 @@ public class ConsumerLagCalculator {
         this.popInflightMessageCounter = brokerController.getPopInflightMessageCounter();
     }
 
+    /**
+     * 消费组处理上下文
+     */
     public static class ProcessGroupInfo {
+        /**
+         * 消费者组
+         */
         public String group;
+        /**
+         * 主题
+         */
         public String topic;
+        /**
+         * 是否 POP 消费
+         */
         public boolean isPop;
+        /**
+         * 重试主题
+         */
         public String retryTopic;
 
+        /**
+         * 初始化处理上下文
+         *
+         * @param group 消费者组
+         * @param topic 主题
+         * @param isPop 是否 POP 消费
+         * @param retryTopic 重试主题
+         */
         public ProcessGroupInfo(String group, String topic, boolean isPop,
             String retryTopic) {
             this.group = group;
@@ -95,11 +159,30 @@ public class ConsumerLagCalculator {
         }
     }
 
+    /**
+     * 计算结果基类
+     */
     public static class BaseCalculateResult {
+        /**
+         * 消费者组
+         */
         public String group;
+        /**
+         * 主题
+         */
         public String topic;
+        /**
+         * 是否重试主题
+         */
         public boolean isRetry;
 
+        /**
+         * 初始化计算结果基类
+         *
+         * @param group 消费者组
+         * @param topic 主题
+         * @param isRetry 是否重试主题
+         */
         public BaseCalculateResult(String group, String topic, boolean isRetry) {
             this.group = group;
             this.topic = topic;
@@ -107,32 +190,82 @@ public class ConsumerLagCalculator {
         }
     }
 
+    /**
+     * 堆积计算结果
+     */
     public static class CalculateLagResult extends BaseCalculateResult {
+        /**
+         * 堆积消息数
+         */
         public long lag;
+        /**
+         * 最早未消费消息存储时间戳
+         */
         public long earliestUnconsumedTimestamp;
 
+        /**
+         * 初始化堆积计算结果
+         *
+         * @param group 消费者组
+         * @param topic 主题
+         * @param isRetry 是否重试主题
+         */
         public CalculateLagResult(String group, String topic, boolean isRetry) {
             super(group, topic, isRetry);
         }
     }
 
+    /**
+     * 在途计算结果
+     */
     public static class CalculateInflightResult extends BaseCalculateResult {
+        /**
+         * 在途消息数
+         */
         public long inFlight;
+        /**
+         * 最早未拉取消息存储时间戳
+         */
         public long earliestUnPulledTimestamp;
 
+        /**
+         * 初始化在途计算结果
+         *
+         * @param group 消费者组
+         * @param topic 主题
+         * @param isRetry 是否重试主题
+         */
         public CalculateInflightResult(String group, String topic, boolean isRetry) {
             super(group, topic, isRetry);
         }
     }
 
+    /**
+     * 可消费数量计算结果
+     */
     public static class CalculateAvailableResult extends BaseCalculateResult {
+        /**
+         * 可消费消息数
+         */
         public long available;
 
+        /**
+         * 初始化可消费数量计算结果
+         *
+         * @param group 消费者组
+         * @param topic 主题
+         * @param isRetry 是否重试主题
+         */
         public CalculateAvailableResult(String group, String topic, boolean isRetry) {
             super(group, topic, isRetry);
         }
     }
 
+    /**
+     * 遍历全部消费组并输出可计算的组主题上下文
+     *
+     * @param consumer 处理回调
+     */
     private void processAllGroup(Consumer<ProcessGroupInfo> consumer) {
         for (Map.Entry<String, SubscriptionGroupConfig> subscriptionEntry :
             subscriptionGroupManager.getSubscriptionGroupTable().entrySet()) {
@@ -166,6 +299,7 @@ public class ConsumerLagCalculator {
             }
             for (String topic : topics) {
                 // skip retry topic
+                // 跳过重试主题
                 if (topic.startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
                     continue;
                 }
@@ -176,6 +310,7 @@ public class ConsumerLagCalculator {
                 }
 
                 // skip no perm topic
+                // 跳过无读写权限主题
                 int topicPerm = topicConfig.getPerm() & brokerConfig.getBrokerPermission();
                 if (!PermName.isReadable(topicPerm) && !PermName.isWriteable(topicPerm)) {
                     continue;
@@ -210,6 +345,11 @@ public class ConsumerLagCalculator {
         }
     }
 
+    /**
+     * 计算全部消费组堆积信息
+     *
+     * @param lagRecorder 结果回调
+     */
     public void calculateLag(Consumer<CalculateLagResult> lagRecorder) {
         processAllGroup(info -> {
             if (info.group == null || info.topic == null) {
@@ -227,6 +367,12 @@ public class ConsumerLagCalculator {
         });
     }
 
+    /**
+     * 计算指定组主题的堆积信息
+     *
+     * @param info 处理上下文
+     * @param lagRecorder 结果回调
+     */
     public void calculate(ProcessGroupInfo info, Consumer<CalculateLagResult> lagRecorder) {
         CalculateLagResult result = new CalculateLagResult(info.group, info.topic, false);
         try {
@@ -256,6 +402,11 @@ public class ConsumerLagCalculator {
         }
     }
 
+    /**
+     * 计算全部消费组在途信息
+     *
+     * @param inflightRecorder 结果回调
+     */
     public void calculateInflight(Consumer<CalculateInflightResult> inflightRecorder) {
         processAllGroup(info -> {
             CalculateInflightResult result = new CalculateInflightResult(info.group, info.topic, false);
@@ -287,6 +438,11 @@ public class ConsumerLagCalculator {
         });
     }
 
+    /**
+     * 计算全部消费组可消费消息数量
+     *
+     * @param availableRecorder 结果回调
+     */
     public void calculateAvailable(Consumer<CalculateAvailableResult> availableRecorder) {
         processAllGroup(info -> {
             CalculateAvailableResult result = new CalculateAvailableResult(info.group, info.topic, false);
@@ -480,6 +636,16 @@ public class ConsumerLagCalculator {
         return storeTimeStamp;
     }
 
+    /**
+     * 计算消息数量区间值
+     *
+     * @param group 消费者组
+     * @param topic 主题
+     * @param queueId 队列标识
+     * @param from 起始位点
+     * @param to 结束位点
+     * @return 消息数量
+     */
     public long calculateMessageCount(String group, String topic, int queueId, long from, long to) {
         long count = to - from;
 

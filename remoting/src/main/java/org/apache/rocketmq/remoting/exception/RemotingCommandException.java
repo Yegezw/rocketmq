@@ -16,13 +16,30 @@
  */
 package org.apache.rocketmq.remoting.exception;
 
+/**
+ * remoting 命令异常
+ */
 public class RemotingCommandException extends RemotingException {
+    /**
+     * 序列化版本号
+     */
     private static final long serialVersionUID = -6061365915274953096L;
 
+    /**
+     * 按异常消息构造异常
+     *
+     * @param message 异常消息
+     */
     public RemotingCommandException(String message) {
         super(message, null);
     }
 
+    /**
+     * 按异常消息和根因构造异常
+     *
+     * @param message 异常消息
+     * @param cause 根因异常
+     */
     public RemotingCommandException(String message, Throwable cause) {
         super(message, cause);
     }

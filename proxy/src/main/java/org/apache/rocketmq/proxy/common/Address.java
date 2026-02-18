@@ -17,11 +17,19 @@
 package org.apache.rocketmq.proxy.common;
 
 import com.google.common.net.HostAndPort;
-import java.util.Objects;
 import org.apache.rocketmq.common.utils.IPAddressUtils;
 
+import java.util.Objects;
+
+/**
+ * 代理地址模型<br>
+ * 包含地址类型与主机端口信息
+ */
 public class Address {
 
+    /**
+     * 地址类型
+     */
     public enum AddressScheme {
         IPv4,
         IPv6,
@@ -29,14 +37,31 @@ public class Address {
         UNRECOGNIZED
     }
 
+    /**
+     * 地址类型
+     */
     private AddressScheme addressScheme;
+    /**
+     * 主机与端口
+     */
     private HostAndPort hostAndPort;
 
+    /**
+     * 根据主机端口构造地址对象
+     *
+     * @param hostAndPort 主机与端口
+     */
     public Address(HostAndPort hostAndPort) {
         this.addressScheme = buildScheme(hostAndPort);
         this.hostAndPort = hostAndPort;
     }
 
+    /**
+     * 根据地址类型与主机端口构造地址对象
+     *
+     * @param addressScheme 地址类型
+     * @param hostAndPort 主机与端口
+     */
     public Address(AddressScheme addressScheme, HostAndPort hostAndPort) {
         this.addressScheme = addressScheme;
         this.hostAndPort = hostAndPort;
@@ -58,6 +83,12 @@ public class Address {
         this.hostAndPort = hostAndPort;
     }
 
+    /**
+     * 根据主机地址推导地址类型
+     *
+     * @param hostAndPort 主机与端口
+     * @return 地址类型
+     */
     private AddressScheme buildScheme(HostAndPort hostAndPort) {
         if (hostAndPort == null) {
             return AddressScheme.UNRECOGNIZED;
@@ -72,6 +103,12 @@ public class Address {
         return AddressScheme.DOMAIN_NAME;
     }
 
+    /**
+     * 比较两个地址对象是否相等
+     *
+     * @param o 对比对象
+     * @return true 表示相等
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -84,6 +121,11 @@ public class Address {
         return addressScheme == address.addressScheme && Objects.equals(hostAndPort, address.hostAndPort);
     }
 
+    /**
+     * 计算地址对象哈希值
+     *
+     * @return 哈希值
+     */
     @Override
     public int hashCode() {
         return Objects.hash(addressScheme, hostAndPort);

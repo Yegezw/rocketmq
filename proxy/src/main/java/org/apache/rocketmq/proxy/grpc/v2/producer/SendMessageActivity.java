@@ -56,13 +56,30 @@ import org.apache.rocketmq.proxy.processor.QueueSelector;
 import org.apache.rocketmq.proxy.service.route.AddressableMessageQueue;
 import org.apache.rocketmq.proxy.service.route.MessageQueueView;
 
+/**
+ * 发送消息活动实现, 负责 gRPC 发送请求校验与发送结果转换
+ */
 public class SendMessageActivity extends AbstractMessingActivity {
 
+    /**
+     * 构造发送消息活动对象
+     *
+     * @param messagingProcessor 消息处理器
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     */
     public SendMessageActivity(MessagingProcessor messagingProcessor,
         GrpcClientSettingsManager grpcClientSettingsManager, GrpcChannelManager grpcChannelManager) {
         super(messagingProcessor, grpcClientSettingsManager, grpcChannelManager);
     }
 
+    /**
+     * 处理发送消息请求
+     *
+     * @param ctx Proxy 上下文
+     * @param request 发送消息请求
+     * @return 发送消息响应 Future
+     */
     public CompletableFuture<SendMessageResponse> sendMessage(ProxyContext ctx, SendMessageRequest request) {
         CompletableFuture<SendMessageResponse> future = new CompletableFuture<>();
 
@@ -89,6 +106,14 @@ public class SendMessageActivity extends AbstractMessingActivity {
         return future;
     }
 
+    /**
+     * 将 gRPC 消息列表构建为内部消息列表
+     *
+     * @param context Proxy 上下文
+     * @param protoMessageList gRPC 消息列表
+     * @param topic 主题资源
+     * @return 内部消息列表
+     */
     protected List<Message> buildMessage(ProxyContext context, List<apache.rocketmq.v2.Message> protoMessageList,
         Resource topic) {
         String topicName = topic.getName();
@@ -98,11 +123,20 @@ public class SendMessageActivity extends AbstractMessingActivity {
                 throw new GrpcProxyException(Code.MESSAGE_CORRUPTED, "topic in message is not same");
             }
             // here use topicName as producerGroup for transactional checker.
+            // 这里使用 topicName 作为事务回查使用的 producerGroup
             messageExtList.add(buildMessage(context, protoMessage, topicName));
         }
         return messageExtList;
     }
 
+    /**
+     * 将单条 gRPC 消息构建为内部消息对象
+     *
+     * @param context Proxy 上下文
+     * @param protoMessage gRPC 消息
+     * @param producerGroup 生产者组
+     * @return 内部消息对象
+     */
     protected Message buildMessage(ProxyContext context, apache.rocketmq.v2.Message protoMessage, String producerGroup) {
         String topicName = protoMessage.getTopic().getName();
 
@@ -116,14 +150,22 @@ public class SendMessageActivity extends AbstractMessingActivity {
         return messageExt;
     }
 
+    /**
+     * 构建消息系统标记位
+     *
+     * @param protoMessage gRPC 消息
+     * @return 系统标记位
+     */
     protected int buildSysFlag(apache.rocketmq.v2.Message protoMessage) {
         // sysFlag (body encoding & message type)
+        // 系统标记位包含消息体编码与消息类型
         int sysFlag = 0;
         Encoding bodyEncoding = protoMessage.getSystemProperties().getBodyEncoding();
         if (bodyEncoding.equals(Encoding.GZIP)) {
             sysFlag |= MessageSysFlag.COMPRESSED_FLAG;
         }
         // transaction
+        // 事务消息标记
         MessageType messageType = protoMessage.getSystemProperties().getMessageType();
         if (messageType.equals(MessageType.TRANSACTION)) {
             sysFlag |= MessageSysFlag.TRANSACTION_PREPARED_TYPE;
@@ -131,6 +173,11 @@ public class SendMessageActivity extends AbstractMessingActivity {
         return sysFlag;
     }
 
+    /**
+     * 校验消息体大小
+     *
+     * @param body 消息体
+     */
     protected void validateMessageBodySize(ByteString body) {
         if (ConfigurationManager.getProxyConfig().isEnableMessageBodyEmptyCheck()) {
             if (body.isEmpty()) {
@@ -146,6 +193,11 @@ public class SendMessageActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 校验消息键值
+     *
+     * @param key 消息键值
+     */
     protected void validateMessageKey(String key) {
         if (StringUtils.isNotEmpty(key)) {
             if (StringUtils.isBlank(key)) {
@@ -157,6 +209,11 @@ public class SendMessageActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 校验消息分组
+     *
+     * @param messageGroup 消息分组
+     */
     protected void validateMessageGroup(String messageGroup) {
         if (StringUtils.isNotEmpty(messageGroup)) {
             if (StringUtils.isBlank(messageGroup)) {
@@ -175,6 +232,11 @@ public class SendMessageActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 校验延迟投递时间
+     *
+     * @param deliveryTimestampMs 投递时间戳毫秒值
+     */
     protected void validateDelayTime(long deliveryTimestampMs) {
         long maxDelay = ConfigurationManager.getProxyConfig().getMaxDelayTimeMills();
         if (maxDelay <= 0) {
@@ -185,6 +247,11 @@ public class SendMessageActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 校验事务回查恢复时间
+     *
+     * @param transactionRecoverySecond 恢复时间秒值
+     */
     protected void validateTransactionRecoverySecond(long transactionRecoverySecond) {
         long maxTransactionRecoverySecond = ConfigurationManager.getProxyConfig().getMaxTransactionRecoverySecond();
         if (maxTransactionRecoverySecond <= 0) {
@@ -195,11 +262,20 @@ public class SendMessageActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 构建内部消息属性
+     *
+     * @param context Proxy 上下文
+     * @param message gRPC 消息
+     * @param producerGroup 生产者组
+     * @return 消息属性表
+     */
     protected Map<String, String> buildMessageProperty(ProxyContext context, apache.rocketmq.v2.Message message, String producerGroup) {
         long userPropertySize = 0;
         ProxyConfig config = ConfigurationManager.getProxyConfig();
         org.apache.rocketmq.common.message.Message messageWithHeader = new org.apache.rocketmq.common.message.Message();
         // set user properties
+        // 设置用户属性
         Map<String, String> userProperties = message.getUserPropertiesMap();
         if (userProperties.size() > config.getUserPropertyMaxNum()) {
             throw new GrpcProxyException(Code.MESSAGE_PROPERTIES_TOO_LARGE, "too many user properties, max is " + config.getUserPropertyMaxNum());
@@ -220,12 +296,14 @@ public class SendMessageActivity extends AbstractMessingActivity {
         MessageAccessor.setProperties(messageWithHeader, Maps.newHashMap(userProperties));
 
         // set tag
+        // 设置标签
         String tag = message.getSystemProperties().getTag();
         GrpcValidator.getInstance().validateTag(tag);
         messageWithHeader.setTags(tag);
         userPropertySize += tag.getBytes(StandardCharsets.UTF_8).length;
 
         // set keys
+        // 设置 keys
         List<String> keysList = message.getSystemProperties().getKeysList();
         for (String key : keysList) {
             validateMessageKey(key);
@@ -240,6 +318,7 @@ public class SendMessageActivity extends AbstractMessingActivity {
         }
 
         // set message id
+        // 设置消息标识
         String messageId = message.getSystemProperties().getMessageId();
         if (StringUtils.isBlank(messageId)) {
             throw new GrpcProxyException(Code.ILLEGAL_MESSAGE_ID, "message id cannot be empty");
@@ -247,6 +326,7 @@ public class SendMessageActivity extends AbstractMessingActivity {
         MessageAccessor.putProperty(messageWithHeader, MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, messageId);
 
         // set transaction property
+        // 设置事务属性
         MessageType messageType = message.getSystemProperties().getMessageType();
         if (messageType.equals(MessageType.TRANSACTION)) {
             MessageAccessor.putProperty(messageWithHeader, MessageConst.PROPERTY_TRANSACTION_PREPARED, "true");
@@ -260,20 +340,25 @@ public class SendMessageActivity extends AbstractMessingActivity {
         }
 
         // set delay level or deliver timestamp
+        // 设置延迟级别或投递时间戳
         fillDelayMessageProperty(message, messageWithHeader);
 
         // set reconsume times
+        // 设置重试次数
         int reconsumeTimes = message.getSystemProperties().getDeliveryAttempt();
         MessageAccessor.setReconsumeTime(messageWithHeader, String.valueOf(reconsumeTimes));
         // set producer group
+        // 设置生产者组
         MessageAccessor.putProperty(messageWithHeader, MessageConst.PROPERTY_PRODUCER_GROUP, producerGroup);
         // set message group
+        // 设置消息分组
         String messageGroup = message.getSystemProperties().getMessageGroup();
         if (StringUtils.isNotEmpty(messageGroup)) {
             validateMessageGroup(messageGroup);
             MessageAccessor.putProperty(messageWithHeader, MessageConst.PROPERTY_SHARDING_KEY, messageGroup);
         }
         // set trace context
+        // 设置追踪上下文
         String traceContext = message.getSystemProperties().getTraceContext();
         if (!traceContext.isEmpty()) {
             MessageAccessor.putProperty(messageWithHeader, MessageConst.PROPERTY_TRACE_CONTEXT, traceContext);
@@ -295,6 +380,12 @@ public class SendMessageActivity extends AbstractMessingActivity {
         return messageWithHeader.getProperties();
     }
 
+    /**
+     * 填充延迟消息属性
+     *
+     * @param message gRPC 消息
+     * @param messageWithHeader 内部消息对象
+     */
     protected void fillDelayMessageProperty(apache.rocketmq.v2.Message message, org.apache.rocketmq.common.message.Message messageWithHeader) {
         if (message.getSystemProperties().hasDeliveryTimestamp()) {
             Timestamp deliveryTimestamp = message.getSystemProperties().getDeliveryTimestamp();
@@ -312,6 +403,14 @@ public class SendMessageActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 将内部发送结果转换为 gRPC 响应
+     *
+     * @param ctx Proxy 上下文
+     * @param request 发送请求
+     * @param resultList 发送结果列表
+     * @return 发送响应
+     */
     protected SendMessageResponse convertToSendMessageResponse(ProxyContext ctx, SendMessageRequest request,
         List<SendResult> resultList) {
         SendMessageResponse.Builder builder = SendMessageResponse.newBuilder();
@@ -364,14 +463,32 @@ public class SendMessageActivity extends AbstractMessingActivity {
         return builder.build();
     }
 
+    /**
+     * 发送消息队列选择器
+     */
     protected static class SendMessageQueueSelector implements QueueSelector {
 
+        /**
+         * 发送请求
+         */
         private final SendMessageRequest request;
 
+        /**
+         * 初始化队列选择器
+         *
+         * @param request 发送请求
+         */
         public SendMessageQueueSelector(SendMessageRequest request) {
             this.request = request;
         }
 
+        /**
+         * 按消息属性选择目标队列
+         *
+         * @param ctx Proxy 上下文
+         * @param messageQueueView 队列视图
+         * @return 目标队列
+         */
         @Override
         public AddressableMessageQueue select(ProxyContext ctx, MessageQueueView messageQueueView) {
             try {
@@ -383,6 +500,7 @@ public class SendMessageActivity extends AbstractMessingActivity {
                 AddressableMessageQueue targetMessageQueue;
                 if (StringUtils.isNotEmpty(shardingKey)) {
                     // With shardingKey
+                    // 使用 shardingKey 做一致性哈希选队列
                     List<AddressableMessageQueue> writeQueues = messageQueueView.getWriteSelector().getQueues();
                     int bucket = Hashing.consistentHash(shardingKey.hashCode(), writeQueues.size());
                     targetMessageQueue = writeQueues.get(bucket);

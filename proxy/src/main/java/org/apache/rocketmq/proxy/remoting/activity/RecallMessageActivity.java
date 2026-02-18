@@ -30,15 +30,36 @@ import org.apache.rocketmq.remoting.protocol.header.RecallMessageRequestHeader;
 
 import java.time.Duration;
 
+/**
+ * 延迟消息撤回请求处理活动
+ */
 public class RecallMessageActivity extends AbstractRemotingActivity {
+    /**
+     * 主题消息类型校验器
+     */
     TopicMessageTypeValidator topicMessageTypeValidator;
 
+    /**
+     * 构造撤回消息活动处理器
+     *
+     * @param requestPipeline 请求处理管道
+     * @param messagingProcessor 消息处理核心组件
+     */
     public RecallMessageActivity(RequestPipeline requestPipeline,
                                  MessagingProcessor messagingProcessor) {
         super(requestPipeline, messagingProcessor);
         this.topicMessageTypeValidator = new DefaultTopicMessageTypeValidator();
     }
 
+    /**
+     * 处理撤回消息请求并校验主题类型
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return Broker 响应
+     * @throws Exception 处理异常
+     */
     @Override
     public RemotingCommand processRequest0(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws Exception {

@@ -17,39 +17,45 @@
 
 package org.apache.rocketmq.proxy.remoting;
 
-import io.netty.handler.ssl.ApplicationProtocolConfig;
-import io.netty.handler.ssl.ApplicationProtocolNames;
-import io.netty.handler.ssl.ClientAuth;
-import io.netty.handler.ssl.OpenSsl;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.SslProvider;
+import io.netty.handler.ssl.*;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.security.cert.CertificateException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.remoting.netty.TlsHelper;
 
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerAuthClient;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerCertPath;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerKeyPassword;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerKeyPath;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerNeedClientAuth;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerTrustCertPath;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsTestModeEnable;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.security.cert.CertificateException;
 
+import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.*;
+
+/**
+ * 多协议 TLS 构建辅助类<br>
+ * 负责创建支持 ALPN 的服务端 SSL 上下文
+ */
 public class MultiProtocolTlsHelper extends TlsHelper {
+    /**
+     * Proxy 日志记录器
+     */
     private final static Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * 私钥解密策略
+     */
     private static final DecryptionStrategy DECRYPTION_STRATEGY = (privateKeyEncryptPath, forClient) -> new FileInputStream(privateKeyEncryptPath);
 
+    /**
+     * 构建服务端 SSL 上下文
+     *
+     * @return SSL 上下文
+     * @throws IOException 证书或密钥读取异常
+     * @throws CertificateException 证书解析异常
+     */
     public static SslContext buildSslContext() throws IOException, CertificateException {
         TlsHelper.buildSslContext(false);
         SslProvider provider;
@@ -89,14 +95,22 @@ public class MultiProtocolTlsHelper extends TlsHelper {
         sslContextBuilder.applicationProtocolConfig(new ApplicationProtocolConfig(
             ApplicationProtocolConfig.Protocol.ALPN,
             // NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
+            // NO_ADVERTISE 当前是 OpenSsl 与 JDK 提供器共同支持的唯一模式
             ApplicationProtocolConfig.SelectorFailureBehavior.NO_ADVERTISE,
             // ACCEPT is currently the only mode supported by both OpenSsl and JDK providers.
+            // ACCEPT 当前是 OpenSsl 与 JDK 提供器共同支持的唯一模式
             ApplicationProtocolConfig.SelectedListenerFailureBehavior.ACCEPT,
             ApplicationProtocolNames.HTTP_2));
 
         return sslContextBuilder.build();
     }
 
+    /**
+     * 解析客户端认证模式
+     *
+     * @param authMode 认证模式字符串
+     * @return 客户端认证模式
+     */
     private static ClientAuth parseClientAuthMode(String authMode) {
         if (null == authMode || authMode.trim().isEmpty()) {
             return ClientAuth.NONE;

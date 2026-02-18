@@ -19,15 +19,36 @@ package org.apache.rocketmq.broker.metrics;
 import com.google.common.base.Objects;
 import org.apache.rocketmq.remoting.protocol.LanguageCode;
 
+/**
+ * 生产者连接聚合属性
+ */
 public class ProducerAttr {
+    /**
+     * 客户端语言
+     */
     LanguageCode language;
+    /**
+     * 客户端版本
+     */
     int version;
 
+    /**
+     * 初始化生产者属性
+     *
+     * @param language 客户端语言
+     * @param version 客户端版本
+     */
     public ProducerAttr(LanguageCode language, int version) {
         this.language = language;
         this.version = version;
     }
 
+    /**
+     * 判断生产者属性是否相等
+     *
+     * @param o 比较对象
+     * @return 是否相等
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o)
@@ -38,6 +59,11 @@ public class ProducerAttr {
         return version == attr.version && language == attr.language;
     }
 
+    /**
+     * 返回生产者属性哈希值
+     *
+     * @return 哈希值
+     */
     @Override
     public int hashCode() {
         return Objects.hashCode(language, version);

@@ -18,8 +18,6 @@
 package org.apache.rocketmq.proxy.remoting.activity;
 
 import io.netty.channel.ChannelHandlerContext;
-import java.util.HashMap;
-import java.util.Map;
 import org.apache.rocketmq.acl.common.AclException;
 import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.exception.MQClientException;
@@ -40,11 +38,29 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public abstract class AbstractRemotingActivity implements NettyRequestProcessor {
+    /**
+     * Remoting 活动日志记录器
+     */
     protected final static Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * 消息处理核心组件
+     */
     protected final MessagingProcessor messagingProcessor;
+    /**
+     * Broker 名称扩展字段键
+     */
     protected static final String BROKER_NAME_FIELD = "bname";
+    /**
+     * SEND_MESSAGE_V2 使用的 Broker 名称字段键
+     */
     protected static final String BROKER_NAME_FIELD_FOR_SEND_MESSAGE_V2 = "n";
+    /**
+     * Proxy 异常码到 Remoting 响应码的映射关系
+     */
     private static final Map<ProxyExceptionCode, Integer> PROXY_EXCEPTION_RESPONSE_CODE_MAP = new HashMap<ProxyExceptionCode, Integer>() {
         {
             put(ProxyExceptionCode.FORBIDDEN, ResponseCode.NO_PERMISSION);
@@ -53,13 +69,32 @@ public abstract class AbstractRemotingActivity implements NettyRequestProcessor 
             put(ProxyExceptionCode.TRANSACTION_DATA_NOT_FOUND, ResponseCode.SUCCESS);
         }
     };
+    /**
+     * 请求处理管道
+     */
     protected final RequestPipeline requestPipeline;
 
+    /**
+     * 构造 Remoting 活动基类
+     *
+     * @param requestPipeline 请求处理管道
+     * @param messagingProcessor 消息处理核心组件
+     */
     public AbstractRemotingActivity(RequestPipeline requestPipeline, MessagingProcessor messagingProcessor) {
         this.requestPipeline = requestPipeline;
         this.messagingProcessor = messagingProcessor;
     }
 
+    /**
+     * 代理请求到 Broker 并根据调用模式写回响应
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @param timeoutMillis 超时时间
+     * @return 单向请求返回 null, 异步请求由回调写回响应
+     * @throws Exception 请求异常
+     */
     protected RemotingCommand request(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context, long timeoutMillis) throws Exception {
         String brokerName;
@@ -89,6 +124,14 @@ public abstract class AbstractRemotingActivity implements NettyRequestProcessor 
         return null;
     }
 
+    /**
+     * 执行公共处理流程, 包含管线执行与异常兜底
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @return 返回值固定为 null, 实际响应通过网络写回
+     * @throws Exception 处理异常
+     */
     @Override
     public RemotingCommand processRequest(ChannelHandlerContext ctx, RemotingCommand request) throws Exception {
         ProxyContext context = createContext();
@@ -105,18 +148,45 @@ public abstract class AbstractRemotingActivity implements NettyRequestProcessor 
         }
     }
 
+    /**
+     * 当前活动不主动拒绝请求
+     *
+     * @return 恒为 false
+     */
     @Override
     public boolean rejectRequest() {
         return false;
     }
 
+    /**
+     * 子类实现的具体业务处理逻辑
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 可选响应对象
+     * @throws Exception 处理异常
+     */
     protected abstract RemotingCommand processRequest0(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws Exception;
 
+    /**
+     * 创建请求级 Proxy 上下文
+     *
+     * @return Proxy 上下文
+     */
     protected ProxyContext createContext() {
         return ProxyContext.create();
     }
 
+    /**
+     * 将异常转换为标准 Remoting 错误响应
+     *
+     * @param ctx Netty 上下文
+     * @param context Proxy 上下文
+     * @param request 原始请求
+     * @param t 原始异常
+     */
     protected void writeErrResponse(ChannelHandlerContext ctx, final ProxyContext context,
         final RemotingCommand request, Throwable t) {
         t = ExceptionUtils.getRealException(t);
@@ -141,11 +211,28 @@ public abstract class AbstractRemotingActivity implements NettyRequestProcessor 
         }
     }
 
+    /**
+     * 写回正常响应
+     *
+     * @param ctx Netty 上下文
+     * @param context Proxy 上下文
+     * @param request 原始请求
+     * @param response 响应命令
+     */
     protected void writeResponse(ChannelHandlerContext ctx, final ProxyContext context,
         final RemotingCommand request, RemotingCommand response) {
         writeResponse(ctx, context, request, response, null);
     }
 
+    /**
+     * 写回响应并附加必要扩展字段
+     *
+     * @param ctx Netty 上下文
+     * @param context Proxy 上下文
+     * @param request 原始请求
+     * @param response 响应命令
+     * @param t 可选异常信息
+     */
     protected void writeResponse(ChannelHandlerContext ctx, final ProxyContext context,
         final RemotingCommand request, RemotingCommand response, Throwable t) {
         if (request.isOnewayRPC()) {

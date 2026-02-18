@@ -21,18 +21,44 @@ import io.netty.channel.Channel;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Proxy 请求处理上下文
+ */
 public class ProxyContext {
+    /**
+     * 内部请求动作名前缀
+     */
     public static final String INNER_ACTION_PREFIX = "Inner";
+    /**
+     * 上下文键值存储容器
+     */
     private final Map<String, Object> value = new HashMap<>();
 
+    /**
+     * 创建空上下文实例
+     *
+     * @return 新的上下文
+     */
     public static ProxyContext create() {
         return new ProxyContext();
     }
 
+    /**
+     * 为内部调用创建上下文并设置动作名
+     *
+     * @param actionName 动作名
+     * @return 内部调用上下文
+     */
     public static ProxyContext createForInner(String actionName) {
         return create().setAction(INNER_ACTION_PREFIX + actionName);
     }
 
+    /**
+     * 为内部调用创建上下文并使用类名作为动作名
+     *
+     * @param clazz 调用类
+     * @return 内部调用上下文
+     */
     public static ProxyContext createForInner(Class<?> clazz) {
         return createForInner(clazz.getSimpleName());
     }
@@ -41,6 +67,13 @@ public class ProxyContext {
         return this.value;
     }
 
+    /**
+     * 写入上下文键值并返回当前实例
+     *
+     * @param key 键
+     * @param val 值
+     * @return 当前上下文
+     */
     public ProxyContext withVal(String key, Object val) {
         this.value.put(key, val);
         return this;

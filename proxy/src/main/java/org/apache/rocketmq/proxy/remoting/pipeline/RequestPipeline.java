@@ -21,10 +21,27 @@ import io.netty.channel.ChannelHandlerContext;
 import org.apache.rocketmq.proxy.common.ProxyContext;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * Remoting 请求处理流水线接口, 用于串联多个处理节点
+ */
 public interface RequestPipeline {
 
+    /**
+     * 执行当前流水线节点
+     *
+     * @param ctx Netty 处理上下文
+     * @param request remoting 请求命令
+     * @param context Proxy 上下文
+     * @throws Exception 执行异常
+     */
     void execute(ChannelHandlerContext ctx, RemotingCommand request, ProxyContext context) throws Exception;
 
+    /**
+     * 将当前节点拼接到给定上游节点之后
+     *
+     * @param source 上游流水线节点
+     * @return 组合后的流水线
+     */
     default RequestPipeline pipe(RequestPipeline source) {
         return (ctx, request, context) -> {
             source.execute(ctx, request, context);

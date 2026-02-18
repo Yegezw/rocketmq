@@ -30,16 +30,42 @@ import org.apache.rocketmq.proxy.common.ProxyContext;
 import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * Remoting 认证流水线, 负责请求身份认证
+ */
 public class AuthenticationPipeline implements RequestPipeline {
+    /**
+     * Proxy 模块日志记录器
+     */
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * 认证配置
+     */
     private final AuthConfig authConfig;
+    /**
+     * 认证执行器
+     */
     private final AuthenticationEvaluator authenticationEvaluator;
 
+    /**
+     * 构造认证流水线
+     *
+     * @param authConfig 认证配置
+     * @param messagingProcessor 消息处理器
+     */
     public AuthenticationPipeline(AuthConfig authConfig, MessagingProcessor messagingProcessor) {
         this.authConfig = authConfig;
         this.authenticationEvaluator = AuthenticationFactory.getEvaluator(authConfig, messagingProcessor::getMetadataService);
     }
 
+    /**
+     * 执行认证流程
+     *
+     * @param ctx Netty 处理上下文
+     * @param request remoting 请求命令
+     * @param context Proxy 上下文
+     * @throws Exception 执行异常
+     */
     @Override
     public void execute(ChannelHandlerContext ctx, RemotingCommand request, ProxyContext context) throws Exception {
         if (!authConfig.isAuthenticationEnabled()) {
@@ -56,6 +82,14 @@ public class AuthenticationPipeline implements RequestPipeline {
         }
     }
 
+    /**
+     * 构建认证上下文
+     *
+     * @param ctx Netty 处理上下文
+     * @param request remoting 请求命令
+     * @param context Proxy 上下文
+     * @return 认证上下文对象
+     */
     protected AuthenticationContext newContext(ChannelHandlerContext ctx, RemotingCommand request, ProxyContext context) {
         return AuthenticationFactory.newContext(authConfig, ctx, request);
     }

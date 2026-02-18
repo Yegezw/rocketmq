@@ -18,13 +18,33 @@ package org.apache.rocketmq.remoting.rpc;
 
 import org.apache.rocketmq.remoting.exception.RemotingException;
 
+/**
+ * RPC 异常类型
+ */
 public class RpcException extends RemotingException {
+    /**
+     * RPC 错误码
+     */
     private int errorCode;
+
+    /**
+     * 按错误码和消息构造 RPC 异常
+     *
+     * @param errorCode 错误码
+     * @param message 异常消息
+     */
     public RpcException(int errorCode, String message) {
         super(message);
         this.errorCode = errorCode;
     }
 
+    /**
+     * 按错误码 消息和根因构造 RPC 异常
+     *
+     * @param errorCode 错误码
+     * @param message 异常消息
+     * @param cause 根因异常
+     */
     public RpcException(int errorCode, String message, Throwable cause) {
         super(message, cause);
         this.errorCode = errorCode;

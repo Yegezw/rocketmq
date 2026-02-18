@@ -16,11 +16,30 @@
  */
 package org.apache.rocketmq.remoting.rpc;
 
+/**
+ * RPC 请求对象
+ */
 public class RpcRequest {
+    /**
+     * 请求码
+     */
     int code;
+    /**
+     * 请求头
+     */
     private RpcRequestHeader header;
+    /**
+     * 请求体
+     */
     private Object body;
 
+    /**
+     * 构造 RPC 请求对象
+     *
+     * @param code 请求码
+     * @param header 请求头
+     * @param body 请求体
+     */
     public RpcRequest(int code, RpcRequestHeader header, Object body) {
         this.code = code;
         this.header = header;

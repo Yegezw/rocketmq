@@ -29,13 +29,30 @@ import org.apache.rocketmq.proxy.grpc.v2.common.ResponseBuilder;
 import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * 转发消息到死信队列活动实现
+ */
 public class ForwardMessageToDLQActivity extends AbstractMessingActivity {
 
+    /**
+     * 构造转发死信活动对象
+     *
+     * @param messagingProcessor 消息处理器
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     */
     public ForwardMessageToDLQActivity(MessagingProcessor messagingProcessor,
         GrpcClientSettingsManager grpcClientSettingsManager, GrpcChannelManager grpcChannelManager) {
         super(messagingProcessor, grpcClientSettingsManager, grpcChannelManager);
     }
 
+    /**
+     * 处理转发消息到死信队列请求
+     *
+     * @param ctx Proxy 上下文
+     * @param request 转发死信请求
+     * @return 转发死信响应 Future
+     */
     public CompletableFuture<ForwardMessageToDeadLetterQueueResponse> forwardMessageToDeadLetterQueue(ProxyContext ctx,
         ForwardMessageToDeadLetterQueueRequest request) {
         CompletableFuture<ForwardMessageToDeadLetterQueueResponse> future = new CompletableFuture<>();
@@ -63,6 +80,13 @@ public class ForwardMessageToDLQActivity extends AbstractMessingActivity {
         return future;
     }
 
+    /**
+     * 将内部返回码转换为 gRPC 转发死信响应
+     *
+     * @param ctx Proxy 上下文
+     * @param result 内部返回命令
+     * @return gRPC 转发死信响应
+     */
     protected ForwardMessageToDeadLetterQueueResponse convertToForwardMessageToDeadLetterQueueResponse(ProxyContext ctx,
         RemotingCommand result) {
         return ForwardMessageToDeadLetterQueueResponse.newBuilder()

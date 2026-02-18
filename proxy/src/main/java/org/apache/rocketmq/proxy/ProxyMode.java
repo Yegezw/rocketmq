@@ -17,12 +17,29 @@
 
 package org.apache.rocketmq.proxy;
 
+/**
+ * Proxy 运行模式枚举
+ */
 public enum ProxyMode {
+    /**
+     * 本地模式, Proxy 与 Broker 处于同进程或同节点部署
+     */
     LOCAL("LOCAL"),
+    /**
+     * 集群模式, Proxy 通过远程路由访问 Broker
+     */
     CLUSTER("CLUSTER");
 
+    /**
+     * 模式字符串表示
+     */
     private final String mode;
 
+    /**
+     * 初始化模式枚举值
+     *
+     * @param mode 模式字符串
+     */
     ProxyMode(String mode) {
         this.mode = mode;
     }

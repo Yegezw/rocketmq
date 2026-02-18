@@ -16,9 +16,21 @@
  */
 package org.apache.rocketmq.proxy.metrics;
 
+/**
+ * Proxy 指标常量定义
+ */
 public class ProxyMetricsConstant {
+    /**
+     * Proxy 存活状态指标名
+     */
     public static final String GAUGE_PROXY_UP = "rocketmq_proxy_up";
 
+    /**
+     * Proxy 模式标签名
+     */
     public static final String LABEL_PROXY_MODE = "proxy_mode";
+    /**
+     * Proxy 节点类型标签值
+     */
     public static final String NODE_TYPE_PROXY = "proxy";
 }

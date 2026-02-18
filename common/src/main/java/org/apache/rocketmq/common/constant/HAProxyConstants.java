@@ -17,13 +17,37 @@
 
 package org.apache.rocketmq.common.constant;
 
+/**
+ * HAProxy Protocol 相关常量定义
+ */
 public class HAProxyConstants {
 
+    /**
+     * 通道 ID 键名
+     */
     public static final String CHANNEL_ID = "channel_id";
+    /**
+     * Proxy Protocol 前缀
+     */
     public static final String PROXY_PROTOCOL_PREFIX = "proxy_protocol_";
+    /**
+     * 源地址键名
+     */
     public static final String PROXY_PROTOCOL_ADDR = PROXY_PROTOCOL_PREFIX + "addr";
+    /**
+     * 源端口键名
+     */
     public static final String PROXY_PROTOCOL_PORT = PROXY_PROTOCOL_PREFIX + "port";
+    /**
+     * 目标地址键名
+     */
     public static final String PROXY_PROTOCOL_SERVER_ADDR = PROXY_PROTOCOL_PREFIX + "server_addr";
+    /**
+     * 目标端口键名
+     */
     public static final String PROXY_PROTOCOL_SERVER_PORT = PROXY_PROTOCOL_PREFIX + "server_port";
+    /**
+     * TLV 扩展字段键名前缀
+     */
     public static final String PROXY_PROTOCOL_TLV_PREFIX = PROXY_PROTOCOL_PREFIX + "tlv_0x";
 }

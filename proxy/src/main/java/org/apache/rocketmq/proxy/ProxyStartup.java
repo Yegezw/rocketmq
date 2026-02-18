@@ -53,23 +53,44 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class ProxyStartup {
+    /**
+     * Proxy 启动流程日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * Proxy 生命周期管理器
+     */
     private static final ProxyStartAndShutdown PROXY_START_AND_SHUTDOWN = new ProxyStartAndShutdown();
 
+    /**
+     * 启动与关闭组件聚合器, 用于统一管理 Proxy 生命周期
+     */
     private static class ProxyStartAndShutdown extends AbstractStartAndShutdown {
+        /**
+         * 追加生命周期组件, 当前实现直接复用父类行为
+         *
+         * @param startAndShutdown 生命周期组件
+         */
         @Override
         public void appendStartAndShutdown(StartAndShutdown startAndShutdown) {
             super.appendStartAndShutdown(startAndShutdown);
         }
     }
 
+    /**
+     * Proxy 启动入口, 负责初始化配置与协议服务
+     *
+     * @param args 启动参数
+     */
     public static void main(String[] args) {
         try {
             // parse argument from command line
+            // 解析命令行参数
             CommandLineArgument commandLineArgument = parseCommandLineArgument(args);
             initConfiguration(commandLineArgument);
 
             // init thread pool monitor for proxy.
+            // 初始化 Proxy 线程池监控
             initThreadPoolMonitor();
 
             ThreadPoolExecutor executor = createServerExecutor();
@@ -77,19 +98,24 @@ public class ProxyStartup {
             MessagingProcessor messagingProcessor = createMessagingProcessor();
 
             // create grpcServer
+            // 创建 gRPC 服务, 与生产者和消费者进行通信
+            // GrpcServer -> GrpcMessagingApplication -> DefaultGrpcMessingActivity (容器) -> DefaultMessagingProcessor
             GrpcServer grpcServer = GrpcServerBuilder.newBuilder(executor, ConfigurationManager.getProxyConfig().getGrpcServerPort())
-                .addService(createServiceProcessor(messagingProcessor))
-                .addService(ChannelzService.newInstance(100))
-                .addService(ProtoReflectionService.newInstance())
-                .configInterceptor()
-                .shutdownTime(ConfigurationManager.getProxyConfig().getGrpcShutdownTimeSeconds(), TimeUnit.SECONDS)
+                .addService(createServiceProcessor(messagingProcessor))   // 消息处理器
+                .addService(ChannelzService.newInstance(100))  // 连接与流量监控服务
+                .addService(ProtoReflectionService.newInstance())         // 反射服务, 支持客户端动态查询服务接口
+                .configInterceptor() // 全局拦截器链
+                .shutdownTime(ConfigurationManager.getProxyConfig().getGrpcShutdownTimeSeconds(), TimeUnit.SECONDS) // 优雅关闭配置
                 .build();
             PROXY_START_AND_SHUTDOWN.appendStartAndShutdown(grpcServer);
 
+            // 创建 Netty 服务, 与 Nameserver 和 Broker 进行通信
+            // RemotingProtocolServer -> NettyRemotingServer -> NettyServerHandler -> NettyRemotingAbstract (容器) -> AbstractRemotingActivity -> DefaultMessagingProcessor
             RemotingProtocolServer remotingServer = new RemotingProtocolServer(messagingProcessor);
             PROXY_START_AND_SHUTDOWN.appendStartAndShutdown(remotingServer);
 
             // start servers one by one.
+            // 顺序启动所有服务
             PROXY_START_AND_SHUTDOWN.start();
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -111,6 +137,12 @@ public class ProxyStartup {
         log.info(new Date() + " rocketmq-proxy startup successfully");
     }
 
+    /**
+     * 初始化 Proxy 配置, 并应用命令行覆盖项
+     *
+     * @param commandLineArgument 命令行参数对象
+     * @throws Exception 初始化异常
+     */
     protected static void initConfiguration(CommandLineArgument commandLineArgument) throws Exception {
         if (StringUtils.isNotBlank(commandLineArgument.getProxyConfigPath())) {
             System.setProperty(Configuration.CONFIG_PATH_PROPERTY, commandLineArgument.getProxyConfigPath());
@@ -122,6 +154,12 @@ public class ProxyStartup {
 
     }
 
+    /**
+     * 解析命令行参数并映射为启动参数对象
+     *
+     * @param args 原始命令行参数
+     * @return 启动参数对象
+     */
     protected static CommandLineArgument parseCommandLineArgument(String[] args) {
         CommandLine commandLine = ServerUtil.parseCmdLine("mqproxy", args,
             buildCommandlineOptions(), new DefaultParser());
@@ -134,6 +172,11 @@ public class ProxyStartup {
         return commandLineArgument;
     }
 
+    /**
+     * 构建 Proxy 启动命令行选项
+     *
+     * @return 命令行选项定义
+     */
     private static Options buildCommandlineOptions() {
         Options options = ServerUtil.buildCommandlineOptions(new Options());
 
@@ -152,6 +195,11 @@ public class ProxyStartup {
         return options;
     }
 
+    /**
+     * 将命令行参数同步到 Proxy 配置对象
+     *
+     * @param commandLineArgument 启动参数对象
+     */
     private static void setConfigFromCommandLineArgument(CommandLineArgument commandLineArgument) {
         if (StringUtils.isNotBlank(commandLineArgument.getNamesrvAddr())) {
             ConfigurationManager.getProxyConfig().setNamesrvAddr(commandLineArgument.getNamesrvAddr());
@@ -164,18 +212,26 @@ public class ProxyStartup {
         }
     }
 
+    /**
+     * 根据运行模式创建消息处理器并注册生命周期
+     *
+     * @return 消息处理器实例
+     */
     protected static MessagingProcessor createMessagingProcessor() {
         String proxyModeStr = ConfigurationManager.getProxyConfig().getProxyMode();
         MessagingProcessor messagingProcessor;
 
         if (ProxyMode.isClusterMode(proxyModeStr)) {
+            // 集群模式
             messagingProcessor = DefaultMessagingProcessor.createForClusterMode();
             ProxyMetricsManager proxyMetricsManager = ProxyMetricsManager.initClusterMode(ConfigurationManager.getProxyConfig());
             PROXY_START_AND_SHUTDOWN.appendStartAndShutdown(proxyMetricsManager);
         } else if (ProxyMode.isLocalMode(proxyModeStr)) {
+            // 本地模式
             BrokerController brokerController = createBrokerController();
             ProxyMetricsManager.initLocalMode(brokerController.getBrokerMetricsManager(), ConfigurationManager.getProxyConfig());
             StartAndShutdown brokerControllerWrapper = new StartAndShutdown() {
+                // 启动本地 Broker, 并输出关键启动信息
                 @Override
                 public void start() throws Exception {
                     brokerController.start();
@@ -187,6 +243,7 @@ public class ProxyStartup {
                     log.info(tip);
                 }
 
+                // 关闭本地 Broker
                 @Override
                 public void shutdown() throws Exception {
                     brokerController.shutdown();
@@ -201,12 +258,23 @@ public class ProxyStartup {
         return messagingProcessor;
     }
 
+    /**
+     * 创建 gRPC 应用处理器并注册生命周期
+     *
+     * @param messagingProcessor 消息处理器
+     * @return gRPC 消息应用实例
+     */
     private static GrpcMessagingApplication createServiceProcessor(MessagingProcessor messagingProcessor) {
         GrpcMessagingApplication application = GrpcMessagingApplication.create(messagingProcessor);
         PROXY_START_AND_SHUTDOWN.appendStartAndShutdown(application);
         return application;
     }
 
+    /**
+     * 根据 Proxy 配置构建本地 Broker 控制器
+     *
+     * @return Broker 控制器
+     */
     protected static BrokerController createBrokerController() {
         ProxyConfig config = ConfigurationManager.getProxyConfig();
         List<String> brokerStartupArgList = Lists.newArrayList("-c", config.getBrokerConfigPath());
@@ -218,10 +286,15 @@ public class ProxyStartup {
         return BrokerStartup.createBrokerController(brokerStartupArgs);
     }
 
+    /**
+     * 创建 gRPC 请求执行线程池, 并注册关闭回调
+     *
+     * @return gRPC 线程池执行器
+     */
     public static ThreadPoolExecutor createServerExecutor() {
         ProxyConfig config = ConfigurationManager.getProxyConfig();
-        int threadPoolNums = config.getGrpcThreadPoolNums();
-        int threadPoolQueueCapacity = config.getGrpcThreadPoolQueueCapacity();
+        int threadPoolNums = config.getGrpcThreadPoolNums();                   // 16 + CPU * 2
+        int threadPoolQueueCapacity = config.getGrpcThreadPoolQueueCapacity(); // 100000
         ThreadPoolExecutor executor = ThreadPoolMonitor.createAndMonitor(
             threadPoolNums,
             threadPoolNums,
@@ -233,6 +306,9 @@ public class ProxyStartup {
         return executor;
     }
 
+    /**
+     * 初始化线程池监控配置
+     */
     public static void initThreadPoolMonitor() {
         ProxyConfig config = ConfigurationManager.getProxyConfig();
         ThreadPoolMonitor.config(

@@ -23,10 +23,16 @@ import org.apache.rocketmq.proxy.processor.channel.ChannelProtocolType;
 import org.apache.rocketmq.proxy.processor.channel.RemoteChannel;
 import org.apache.rocketmq.proxy.remoting.channel.RemotingChannel;
 
+/**
+ * 通道辅助工具类<br>
+ * 负责判断通道来源与协议类型
+ */
 public class ChannelHelper {
 
     /**
      * judge channel is sync from other proxy or not
+     * <br>
+     * 判断通道是否为来自其他 Proxy 的同步通道
      *
      * @param channel channel
      * @return true if is sync from other proxy

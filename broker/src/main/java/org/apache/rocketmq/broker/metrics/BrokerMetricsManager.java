@@ -114,60 +114,180 @@ import static org.apache.rocketmq.broker.metrics.BrokerMetricsConstant.OPEN_TELE
 import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.LABEL_PROTOCOL_TYPE;
 import static org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant.PROTOCOL_TYPE_REMOTING;
 
+/**
+ * Broker 指标管理器
+ */
 public class BrokerMetricsManager {
+    /**
+     * Broker 日志记录器
+     */
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
 
+    /**
+     * Broker 配置
+     */
     private final BrokerConfig brokerConfig;
+    /**
+     * 消息存储接口
+     */
     private final MessageStore messageStore;
+    /**
+     * Broker 控制器
+     */
     private final BrokerController brokerController;
+    /**
+     * 消费堆积计算器
+     */
     private final ConsumerLagCalculator consumerLagCalculator;
+    /**
+     * 全局固定标签
+     */
     private final static Map<String, String> LABEL_MAP = new HashMap<>();
+    /**
+     * OTLP 指标导出器
+     */
     private OtlpGrpcMetricExporter metricExporter;
+    /**
+     * 周期性指标读取器
+     */
     private PeriodicMetricReader periodicMetricReader;
+    /**
+     * Prometheus HTTP 服务
+     */
     private PrometheusHttpServer prometheusHttpServer;
+    /**
+     * 日志指标导出器
+     */
     private MetricExporter loggingMetricExporter;
+    /**
+     * Broker Meter 对象
+     */
     private Meter brokerMeter;
 
+    /**
+     * AttributesBuilder 提供者
+     */
     public static Supplier<AttributesBuilder> attributesBuilderSupplier = Attributes::builder;
 
     // broker stats metrics
+    // Broker 统计指标
+    /**
+     * 处理器水位 Gauge 指标
+     */
     public static ObservableLongGauge processorWatermark = new NopObservableLongGauge();
+    /**
+     * Broker 权限 Gauge 指标
+     */
     public static ObservableLongGauge brokerPermission = new NopObservableLongGauge();
+    /**
+     * Topic 数量 Gauge 指标
+     */
     public static ObservableLongGauge topicNum = new NopObservableLongGauge();
+    /**
+     * 消费组数量 Gauge 指标
+     */
     public static ObservableLongGauge consumerGroupNum = new NopObservableLongGauge();
 
 
     // request metrics
+    // 请求类指标
+    /**
+     * 入站消息总量计数器
+     */
     public static LongCounter messagesInTotal = new NopLongCounter();
+    /**
+     * 出站消息总量计数器
+     */
     public static LongCounter messagesOutTotal = new NopLongCounter();
+    /**
+     * 入站吞吐总量计数器
+     */
     public static LongCounter throughputInTotal = new NopLongCounter();
+    /**
+     * 出站吞吐总量计数器
+     */
     public static LongCounter throughputOutTotal = new NopLongCounter();
+    /**
+     * 消息大小直方图
+     */
     public static LongHistogram messageSize = new NopLongHistogram();
+    /**
+     * Topic 创建耗时直方图
+     */
     public static LongHistogram topicCreateExecuteTime = new NopLongHistogram();
+    /**
+     * 消费组创建耗时直方图
+     */
     public static LongHistogram consumerGroupCreateExecuteTime = new NopLongHistogram();
 
     // client connection metrics
+    // 客户端连接指标
+    /**
+     * 生产者连接 Gauge 指标
+     */
     public static ObservableLongGauge producerConnection = new NopObservableLongGauge();
+    /**
+     * 消费者连接 Gauge 指标
+     */
     public static ObservableLongGauge consumerConnection = new NopObservableLongGauge();
 
     // Lag metrics
+    // 堆积类指标
+    /**
+     * 消费堆积消息数 Gauge 指标
+     */
     public static ObservableLongGauge consumerLagMessages = new NopObservableLongGauge();
+    /**
+     * 消费堆积时延 Gauge 指标
+     */
     public static ObservableLongGauge consumerLagLatency = new NopObservableLongGauge();
+    /**
+     * 消费在途消息数 Gauge 指标
+     */
     public static ObservableLongGauge consumerInflightMessages = new NopObservableLongGauge();
+    /**
+     * 消费排队时延 Gauge 指标
+     */
     public static ObservableLongGauge consumerQueueingLatency = new NopObservableLongGauge();
+    /**
+     * 消费就绪消息数 Gauge 指标
+     */
     public static ObservableLongGauge consumerReadyMessages = new NopObservableLongGauge();
+    /**
+     * 发送死信消息计数器
+     */
     public static LongCounter sendToDlqMessages = new NopLongCounter();
+    /**
+     * 半消息数量 Gauge 指标
+     */
     public static ObservableLongGauge halfMessages = new NopObservableLongGauge();
+    /**
+     * 事务提交计数器
+     */
     public static LongCounter commitMessagesTotal = new NopLongCounter();
+    /**
+     * 事务回滚计数器
+     */
     public static LongCounter rollBackMessagesTotal = new NopLongCounter();
+    /**
+     * 事务结束时延直方图
+     */
     public static LongHistogram transactionFinishLatency = new NopLongHistogram();
 
+    /**
+     * 系统消费组前缀列表
+     */
     public static final List<String> SYSTEM_GROUP_PREFIX_LIST = new ArrayList<String>() {
         {
             add(MixAll.CID_RMQ_SYS_PREFIX.toLowerCase());
         }
     };
 
+    /**
+     * 初始化 Broker 指标管理器
+     *
+     * @param brokerController Broker 控制器
+     */
     public BrokerMetricsManager(BrokerController brokerController) {
         this.brokerController = brokerController;
         brokerConfig = brokerController.getBrokerConfig();
@@ -176,6 +296,11 @@ public class BrokerMetricsManager {
         init();
     }
 
+    /**
+     * 创建带全局标签的 AttributesBuilder
+     *
+     * @return AttributesBuilder 对象
+     */
     public static AttributesBuilder newAttributesBuilder() {
         AttributesBuilder attributesBuilder;
         if (attributesBuilderSupplier == null) {
@@ -186,6 +311,12 @@ public class BrokerMetricsManager {
         return attributesBuilder;
     }
 
+    /**
+     * 构造消费堆积指标标签
+     *
+     * @param result 计算结果
+     * @return 标签对象
+     */
     private Attributes buildLagAttributes(ConsumerLagCalculator.BaseCalculateResult result) {
         AttributesBuilder attributesBuilder = newAttributesBuilder();
         attributesBuilder.put(LABEL_CONSUMER_GROUP, result.group);
@@ -241,6 +372,11 @@ public class BrokerMetricsManager {
         return brokerMeter;
     }
 
+    /**
+     * 校验指标导出配置
+     *
+     * @return 配置是否可用
+     */
     private boolean checkConfig() {
         if (brokerConfig == null) {
             return false;
@@ -261,6 +397,9 @@ public class BrokerMetricsManager {
         return false;
     }
 
+    /**
+     * 初始化指标导出器与指标定义
+     */
     private void init() {
         MetricsExporterType metricsExporterType = brokerConfig.getMetricsExporterType();
         if (metricsExporterType == MetricsExporterType.DISABLE) {
@@ -372,8 +511,14 @@ public class BrokerMetricsManager {
         initOtherMetrics();
     }
 
+    /**
+     * 注册指标视图与桶配置
+     *
+     * @param providerBuilder MeterProvider 构建器
+     */
     private void registerMetricsView(SdkMeterProviderBuilder providerBuilder) {
         // message size buckets, 1k, 4k, 512k, 1M, 2M, 4M
+        // 消息大小分桶, 分别为 1k 4k 512k 1M 2M 4M
         List<Double> messageSizeBuckets = Arrays.asList(
             1d * 1024, //1KB
             4d * 1024, //4KB
@@ -406,6 +551,7 @@ public class BrokerMetricsManager {
         ViewBuilder messageSizeViewBuilder = View.builder()
             .setAggregation(Aggregation.explicitBucketHistogram(messageSizeBuckets));
         // To config the cardinalityLimit for openTelemetry metrics exporting.
+        // 配置 openTelemetry 指标导出的基数限制
         SdkMeterProviderUtil.setCardinalityLimit(messageSizeViewBuilder, brokerConfig.getMetricsOtelCardinalityLimit());
         providerBuilder.registerView(messageSizeSelector, messageSizeViewBuilder.build());
 
@@ -416,6 +562,7 @@ public class BrokerMetricsManager {
         ViewBuilder commitLatencyViewBuilder = View.builder()
             .setAggregation(Aggregation.explicitBucketHistogram(commitLatencyBuckets));
         // To config the cardinalityLimit for openTelemetry metrics exporting.
+        // 配置 openTelemetry 指标导出的基数限制
         SdkMeterProviderUtil.setCardinalityLimit(commitLatencyViewBuilder, brokerConfig.getMetricsOtelCardinalityLimit());
         providerBuilder.registerView(commitLatencySelector, commitLatencyViewBuilder.build());
 
@@ -432,6 +579,7 @@ public class BrokerMetricsManager {
         ViewBuilder createSubGroupTimeViewBuilder = View.builder()
                 .setAggregation(Aggregation.explicitBucketHistogram(createTimeBuckets));
         // To config the cardinalityLimit for openTelemetry metrics exporting.
+        // 配置 openTelemetry 指标导出的基数限制
         SdkMeterProviderUtil.setCardinalityLimit(createTopicTimeViewBuilder, brokerConfig.getMetricsOtelCardinalityLimit());
         providerBuilder.registerView(createTopicTimeSelector, createTopicTimeViewBuilder.build());
         SdkMeterProviderUtil.setCardinalityLimit(createSubGroupTimeViewBuilder, brokerConfig.getMetricsOtelCardinalityLimit());
@@ -456,6 +604,7 @@ public class BrokerMetricsManager {
         }
 
         // default view builder for all counter.
+        // 全量 Counter 默认视图构建器
         InstrumentSelector defaultCounterSelector = InstrumentSelector.builder()
             .setType(InstrumentType.COUNTER)
             .build();
@@ -464,6 +613,7 @@ public class BrokerMetricsManager {
         providerBuilder.registerView(defaultCounterSelector, defaultCounterViewBuilder.build());
 
         //default view builder for all observable gauge.
+        // 全量 Observable Gauge 默认视图构建器
         InstrumentSelector defaultGaugeSelector = InstrumentSelector.builder()
             .setType(InstrumentType.OBSERVABLE_GAUGE)
             .build();
@@ -472,6 +622,9 @@ public class BrokerMetricsManager {
         providerBuilder.registerView(defaultGaugeSelector, defaultGaugeViewBuilder.build());
     }
 
+    /**
+     * 初始化 Broker 统计类指标
+     */
     private void initStatsMetrics() {
         processorWatermark = brokerMeter.gaugeBuilder(GAUGE_PROCESSOR_WATERMARK)
             .setDescription("Request processor watermark")
@@ -507,6 +660,9 @@ public class BrokerMetricsManager {
             .buildWithCallback(measurement -> measurement.record(brokerController.getSubscriptionGroupManager().getSubscriptionGroupTable().size(), newAttributesBuilder().build()));
     }
 
+    /**
+     * 初始化请求类指标
+     */
     private void initRequestMetrics() {
         messagesInTotal = brokerMeter.counterBuilder(COUNTER_MESSAGES_IN_TOTAL)
             .setDescription("Total number of incoming messages")
@@ -542,6 +698,9 @@ public class BrokerMetricsManager {
                 .build();
     }
 
+    /**
+     * 初始化客户端连接类指标
+     */
     private void initConnectionMetrics() {
         producerConnection = brokerMeter.gaugeBuilder(GAUGE_PRODUCER_CONNECTIONS)
             .setDescription("Producer connections")
@@ -598,6 +757,9 @@ public class BrokerMetricsManager {
             });
     }
 
+    /**
+     * 初始化消费堆积与死信类指标
+     */
     private void initLagAndDlqMetrics() {
         consumerLagMessages = brokerMeter.gaugeBuilder(GAUGE_CONSUMER_LAG_MESSAGES)
             .setDescription("Consumer lag messages")
@@ -648,6 +810,9 @@ public class BrokerMetricsManager {
             .build();
     }
 
+    /**
+     * 初始化事务类指标
+     */
     private void initTransactionMetrics() {
         commitMessagesTotal = brokerMeter.counterBuilder(COUNTER_COMMIT_MESSAGES_TOTAL)
                 .setDescription("Total number of commit messages")
@@ -676,12 +841,19 @@ public class BrokerMetricsManager {
                             });
                 });
     }
+
+    /**
+     * 初始化 Remoting Store 与 POP 相关指标
+     */
     private void initOtherMetrics() {
         RemotingMetricsManager.initMetrics(brokerMeter, BrokerMetricsManager::newAttributesBuilder);
         messageStore.initMetrics(brokerMeter, BrokerMetricsManager::newAttributesBuilder);
         PopMetricsManager.initMetrics(brokerMeter, brokerController, BrokerMetricsManager::newAttributesBuilder);
     }
 
+    /**
+     * 关闭指标导出组件
+     */
     public void shutdown() {
         if (brokerConfig.getMetricsExporterType() == MetricsExporterType.OTLP_GRPC) {
             periodicMetricReader.forceFlush();

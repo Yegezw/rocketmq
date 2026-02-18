@@ -17,22 +17,54 @@
 
 package org.apache.rocketmq.proxy.common;
 
-import java.util.concurrent.CompletableFuture;
 import org.apache.rocketmq.client.consumer.AckResult;
 
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * 回执续期事件<br>
+ * 用于在续期流程中传递事件参数
+ */
 public class RenewEvent {
+    /**
+     * 回执句柄分组键
+     */
     protected ReceiptHandleGroupKey key;
+    /**
+     * 消息回执句柄
+     */
     protected MessageReceiptHandle messageReceiptHandle;
+    /**
+     * 计划续期时间
+     */
     protected long renewTime;
+    /**
+     * 事件类型
+     */
     protected EventType eventType;
+    /**
+     * 异步执行结果
+     */
     protected CompletableFuture<AckResult> future;
 
+    /**
+     * 续期事件类型
+     */
     public enum EventType {
         RENEW,
         STOP_RENEW,
         CLEAR_GROUP
     }
 
+    /**
+     * 构造回执续期事件
+     *
+     * @param key 回执句柄分组键
+     * @param messageReceiptHandle 消息回执句柄
+     * @param renewTime 计划续期时间
+     * @param eventType 事件类型
+     * @param future 异步执行结果
+     */
     public RenewEvent(ReceiptHandleGroupKey key, MessageReceiptHandle messageReceiptHandle, long renewTime,
         EventType eventType, CompletableFuture<AckResult> future) {
         this.key = key;

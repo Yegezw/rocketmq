@@ -16,36 +16,74 @@
  */
 package org.apache.rocketmq.proxy.service.transaction;
 
-import java.util.List;
 import org.apache.rocketmq.common.BrokerConfig;
 import org.apache.rocketmq.proxy.common.ProxyContext;
 
+import java.util.List;
+
 /**
  * no need to implements, because the channel of producer will put into the broker's producerManager
+ * <br>
+ * 本地模式无需额外实现, 因为生产者通道会直接注册到 Broker 的 producerManager
  */
 public class LocalTransactionService extends AbstractTransactionService {
 
+    /**
+     * Broker 运行配置
+     */
     protected final BrokerConfig brokerConfig;
 
+    /**
+     * 初始化本地事务服务
+     *
+     * @param brokerConfig Broker 配置
+     */
     public LocalTransactionService(BrokerConfig brokerConfig) {
         this.brokerConfig = brokerConfig;
     }
 
+    /**
+     * 本地模式下追加事务订阅无需额外处理
+     *
+     * @param ctx 请求上下文
+     * @param group 生产者组
+     * @param topicList 主题列表
+     */
     @Override
     public void addTransactionSubscription(ProxyContext ctx, String group, List<String> topicList) {
 
     }
 
+    /**
+     * 本地模式下追加单个事务订阅无需额外处理
+     *
+     * @param ctx 请求上下文
+     * @param group 生产者组
+     * @param topic 主题
+     */
     @Override
     public void addTransactionSubscription(ProxyContext ctx, String group, String topic) {
 
     }
 
+    /**
+     * 本地模式下替换事务订阅无需额外处理
+     *
+     * @param ctx 请求上下文
+     * @param group 生产者组
+     * @param topicList 主题列表
+     */
     @Override
     public void replaceTransactionSubscription(ProxyContext ctx, String group, List<String> topicList) {
 
     }
 
+    /**
+     * 本地模式下取消事务订阅无需额外处理
+     *
+     * @param ctx 请求上下文
+     * @param group 生产者组
+     */
     @Override
     public void unSubscribeAllTransactionTopic(ProxyContext ctx, String group) {
 

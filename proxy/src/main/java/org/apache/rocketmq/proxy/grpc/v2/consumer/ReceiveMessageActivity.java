@@ -46,14 +46,34 @@ import org.apache.rocketmq.proxy.service.route.MessageQueueView;
 import org.apache.rocketmq.remoting.protocol.filter.FilterAPI;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
+/**
+ * 接收消息活动实现, 负责 POP 拉取与结果回写
+ */
 public class ReceiveMessageActivity extends AbstractMessingActivity {
+    /**
+     * 引入非法轮询时间错误码的最小客户端版本
+     */
     private static final String ILLEGAL_POLLING_TIME_INTRODUCED_CLIENT_VERSION = "5.0.3";
 
+    /**
+     * 构造接收消息活动对象
+     *
+     * @param messagingProcessor 消息处理器
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     */
     public ReceiveMessageActivity(MessagingProcessor messagingProcessor,
         GrpcClientSettingsManager grpcClientSettingsManager, GrpcChannelManager grpcChannelManager) {
         super(messagingProcessor, grpcClientSettingsManager, grpcChannelManager);
     }
 
+    /**
+     * 处理接收消息请求并异步回写流响应
+     *
+     * @param ctx Proxy 上下文
+     * @param request 接收消息请求
+     * @param responseObserver 响应观察者
+     */
     public void receiveMessage(ProxyContext ctx, ReceiveMessageRequest request,
         StreamObserver<ReceiveMessageResponse> responseObserver) {
         ReceiveMessageResponseStreamWriter writer = createWriter(ctx, responseObserver);
@@ -158,6 +178,13 @@ public class ReceiveMessageActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 创建接收消息响应流写入器
+     *
+     * @param ctx Proxy 上下文
+     * @param responseObserver 响应观察者
+     * @return 响应流写入器
+     */
     protected ReceiveMessageResponseStreamWriter createWriter(ProxyContext ctx,
         StreamObserver<ReceiveMessageResponse> responseObserver) {
         return new ReceiveMessageResponseStreamWriter(
@@ -166,14 +193,32 @@ public class ReceiveMessageActivity extends AbstractMessingActivity {
         );
     }
 
+    /**
+     * 接收消息队列选择器
+     */
     protected static class ReceiveMessageQueueSelector implements QueueSelector {
 
+        /**
+         * 目标 broker 名称
+         */
         private final String brokerName;
 
+        /**
+         * 初始化队列选择器
+         *
+         * @param brokerName 目标 broker 名称
+         */
         public ReceiveMessageQueueSelector(String brokerName) {
             this.brokerName = brokerName;
         }
 
+        /**
+         * 选择用于接收消息的目标队列
+         *
+         * @param ctx Proxy 上下文
+         * @param messageQueueView 队列视图
+         * @return 目标队列
+         */
         @Override
         public AddressableMessageQueue select(ProxyContext ctx, MessageQueueView messageQueueView) {
             try {

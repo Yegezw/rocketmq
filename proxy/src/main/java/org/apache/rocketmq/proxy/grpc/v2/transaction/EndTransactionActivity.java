@@ -32,13 +32,30 @@ import org.apache.rocketmq.proxy.grpc.v2.common.ResponseBuilder;
 import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 import org.apache.rocketmq.proxy.processor.TransactionStatus;
 
+/**
+ * 结束事务活动, 负责处理事务提交与回滚请求
+ */
 public class EndTransactionActivity extends AbstractMessingActivity {
 
+    /**
+     * 构造结束事务活动对象
+     *
+     * @param messagingProcessor 消息处理器
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     */
     public EndTransactionActivity(MessagingProcessor messagingProcessor,
         GrpcClientSettingsManager grpcClientSettingsManager, GrpcChannelManager grpcChannelManager) {
         super(messagingProcessor, grpcClientSettingsManager, grpcChannelManager);
     }
 
+    /**
+     * 执行结束事务逻辑
+     *
+     * @param ctx Proxy 上下文
+     * @param request 结束事务请求
+     * @return 结束事务响应 Future
+     */
     public CompletableFuture<EndTransactionResponse> endTransaction(ProxyContext ctx, EndTransactionRequest request) {
         CompletableFuture<EndTransactionResponse> future = new CompletableFuture<>();
         try {

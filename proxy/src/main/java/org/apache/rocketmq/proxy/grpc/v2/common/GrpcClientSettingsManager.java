@@ -17,23 +17,9 @@
 
 package org.apache.rocketmq.proxy.grpc.v2.common;
 
-import apache.rocketmq.v2.Address;
-import apache.rocketmq.v2.AddressScheme;
-import apache.rocketmq.v2.ClientType;
-import apache.rocketmq.v2.CustomizedBackoff;
-import apache.rocketmq.v2.Endpoints;
-import apache.rocketmq.v2.ExponentialBackoff;
-import apache.rocketmq.v2.Metric;
-import apache.rocketmq.v2.Settings;
+import apache.rocketmq.v2.*;
 import com.google.protobuf.Duration;
 import com.google.protobuf.util.Durations;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import org.apache.rocketmq.broker.client.ConsumerGroupInfo;
 import org.apache.rocketmq.common.ServiceThread;
 import org.apache.rocketmq.common.constant.LoggerName;
@@ -45,18 +31,40 @@ import org.apache.rocketmq.proxy.config.ConfigurationManager;
 import org.apache.rocketmq.proxy.config.MetricCollectorMode;
 import org.apache.rocketmq.proxy.config.ProxyConfig;
 import org.apache.rocketmq.proxy.processor.MessagingProcessor;
-import org.apache.rocketmq.remoting.protocol.subscription.CustomizedRetryPolicy;
-import org.apache.rocketmq.remoting.protocol.subscription.ExponentialRetryPolicy;
-import org.apache.rocketmq.remoting.protocol.subscription.GroupRetryPolicy;
-import org.apache.rocketmq.remoting.protocol.subscription.GroupRetryPolicyType;
-import org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig;
+import org.apache.rocketmq.remoting.protocol.subscription.*;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+/**
+ * gRPC 客户端设置管理器<br>
+ * 负责缓存客户端设置并按 Proxy 配置补全默认值
+ */
 public class GrpcClientSettingsManager extends ServiceThread implements StartAndShutdown {
+    /**
+     * Proxy 日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * 按客户端 ID 缓存原始设置
+     */
     protected static final Map<String, Settings> CLIENT_SETTINGS_MAP = new ConcurrentHashMap<>();
 
+    /**
+     * 消息处理器
+     */
     private final MessagingProcessor messagingProcessor;
 
+    /**
+     * 构造客户端设置管理器
+     *
+     * @param messagingProcessor 消息处理器
+     */
     public GrpcClientSettingsManager(MessagingProcessor messagingProcessor) {
         this.messagingProcessor = messagingProcessor;
     }
@@ -79,6 +87,12 @@ public class GrpcClientSettingsManager extends ServiceThread implements StartAnd
         return mergeMetric(settings);
     }
 
+    /**
+     * 合并生产者默认设置
+     *
+     * @param settings 原始客户端设置
+     * @return 合并后的设置
+     */
     protected static Settings mergeProducerData(Settings settings) {
         ProxyConfig config = ConfigurationManager.getProxyConfig();
         Settings.Builder builder = settings.toBuilder();
@@ -97,6 +111,14 @@ public class GrpcClientSettingsManager extends ServiceThread implements StartAnd
         return builder.build();
     }
 
+    /**
+     * 合并订阅组相关设置
+     *
+     * @param ctx Proxy 上下文
+     * @param settings 原始客户端设置
+     * @param consumerGroup 消费组名称
+     * @return 合并后的设置
+     */
     protected Settings mergeSubscriptionData(ProxyContext ctx, Settings settings, String consumerGroup) {
         SubscriptionGroupConfig config = this.messagingProcessor.getSubscriptionGroupConfig(ctx, consumerGroup);
         if (config == null) {
@@ -106,8 +128,15 @@ public class GrpcClientSettingsManager extends ServiceThread implements StartAnd
         return mergeSubscriptionData(settings, config);
     }
 
+    /**
+     * 按 Proxy 配置合并指标采集设置
+     *
+     * @param settings 原始客户端设置
+     * @return 合并后的设置
+     */
     protected Settings mergeMetric(Settings settings) {
         // Construct metric according to the proxy config
+        // 根据 proxy 配置构造指标采集设置
         final ProxyConfig proxyConfig = ConfigurationManager.getProxyConfig();
         final MetricCollectorMode metricCollectorMode =
             MetricCollectorMode.getEnumByString(proxyConfig.getMetricCollectorMode());
@@ -135,6 +164,13 @@ public class GrpcClientSettingsManager extends ServiceThread implements StartAnd
         return settings.toBuilder().setMetric(metric).build();
     }
 
+    /**
+     * 根据订阅组配置合并消费端设置
+     *
+     * @param settings 原始客户端设置
+     * @param groupConfig 订阅组配置
+     * @return 合并后的设置
+     */
     protected static Settings mergeSubscriptionData(Settings settings, SubscriptionGroupConfig groupConfig) {
         Settings.Builder resultSettingsBuilder = settings.toBuilder();
         ProxyConfig config = ConfigurationManager.getProxyConfig();
@@ -164,6 +200,12 @@ public class GrpcClientSettingsManager extends ServiceThread implements StartAnd
         return resultSettingsBuilder.build();
     }
 
+    /**
+     * 转换指数退避策略
+     *
+     * @param retryPolicy RocketMQ 内部指数退避策略
+     * @return gRPC 指数退避策略
+     */
     protected static ExponentialBackoff convertToExponentialBackoff(ExponentialRetryPolicy retryPolicy) {
         return ExponentialBackoff.newBuilder()
             .setInitial(Durations.fromMillis(retryPolicy.getInitial()))
@@ -172,6 +214,12 @@ public class GrpcClientSettingsManager extends ServiceThread implements StartAnd
             .build();
     }
 
+    /**
+     * 转换自定义退避策略
+     *
+     * @param retryPolicy RocketMQ 内部自定义退避策略
+     * @return gRPC 自定义退避策略
+     */
     protected static CustomizedBackoff convertToCustomizedRetryPolicy(CustomizedRetryPolicy retryPolicy) {
         List<Duration> durationList = Arrays.stream(retryPolicy.getNext())
             .mapToObj(Durations::fromMillis).collect(Collectors.toList());
@@ -180,6 +228,13 @@ public class GrpcClientSettingsManager extends ServiceThread implements StartAnd
             .build();
     }
 
+    /**
+     * 更新客户端设置缓存
+     *
+     * @param ctx Proxy 上下文
+     * @param clientId 客户端 ID
+     * @param settings 客户端设置
+     */
     public void updateClientSettings(ProxyContext ctx, String clientId, Settings settings) {
         if (settings.hasSubscription()) {
             settings = createDefaultConsumerSettingsBuilder().mergeFrom(settings).build();
@@ -187,15 +242,32 @@ public class GrpcClientSettingsManager extends ServiceThread implements StartAnd
         CLIENT_SETTINGS_MAP.put(clientId, settings);
     }
 
+    /**
+     * 创建消费端默认设置构建器
+     *
+     * @return 默认设置构建器
+     */
     protected Settings.Builder createDefaultConsumerSettingsBuilder() {
         return mergeSubscriptionData(Settings.newBuilder().getDefaultInstanceForType(), new SubscriptionGroupConfig())
             .toBuilder();
     }
 
+    /**
+     * 删除并返回原始客户端设置
+     *
+     * @param clientId 客户端 ID
+     * @return 原始客户端设置
+     */
     public Settings removeAndGetRawClientSettings(String clientId) {
         return CLIENT_SETTINGS_MAP.remove(clientId);
     }
 
+    /**
+     * 删除并返回合并后的客户端设置
+     *
+     * @param ctx Proxy 上下文
+     * @return 合并后的客户端设置
+     */
     public Settings removeAndGetClientSettings(ProxyContext ctx) {
         String clientId = ctx.getClientID();
         Settings settings = this.removeAndGetRawClientSettings(clientId);
@@ -213,6 +285,9 @@ public class GrpcClientSettingsManager extends ServiceThread implements StartAnd
         return "GrpcClientSettingsManagerCleaner";
     }
 
+    /**
+     * 后台线程循环等待清理触发
+     */
     @Override
     public void run() {
         while (!this.isStopped()) {
@@ -220,6 +295,9 @@ public class GrpcClientSettingsManager extends ServiceThread implements StartAnd
         }
     }
 
+    /**
+     * 扫描并清理已失效的客户端设置
+     */
     @Override
     protected void onWaitEnd() {
         Set<String> clientIdSet = CLIENT_SETTINGS_MAP.keySet();

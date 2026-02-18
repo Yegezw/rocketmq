@@ -20,12 +20,7 @@ package org.apache.rocketmq.proxy.remoting.activity;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.google.common.net.HostAndPort;
 import io.netty.channel.ChannelHandlerContext;
-import java.util.ArrayList;
-import java.util.List;
 import org.apache.rocketmq.common.MQVersion;
-import org.apache.rocketmq.remoting.protocol.ResponseCode;
-import org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader;
-import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 import org.apache.rocketmq.proxy.common.Address;
 import org.apache.rocketmq.proxy.common.ProxyContext;
 import org.apache.rocketmq.proxy.config.ConfigurationManager;
@@ -34,13 +29,37 @@ import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 import org.apache.rocketmq.proxy.remoting.pipeline.RequestPipeline;
 import org.apache.rocketmq.proxy.service.route.ProxyTopicRouteData;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.ResponseCode;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader;
+import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 主题路由查询请求处理活动
+ */
 public class GetTopicRouteActivity extends AbstractRemotingActivity {
+    /**
+     * 构造主题路由查询活动
+     *
+     * @param requestPipeline 请求处理管道
+     * @param messagingProcessor 消息处理核心组件
+     */
     public GetTopicRouteActivity(RequestPipeline requestPipeline,
         MessagingProcessor messagingProcessor) {
         super(requestPipeline, messagingProcessor);
     }
 
+    /**
+     * 处理主题路由查询请求并返回路由数据
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 主题路由响应
+     * @throws Exception 处理异常
+     */
     @Override
     protected RemotingCommand processRequest0(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws Exception {
@@ -50,6 +69,7 @@ public class GetTopicRouteActivity extends AbstractRemotingActivity {
             (GetRouteInfoRequestHeader) request.decodeCommandCustomHeader(GetRouteInfoRequestHeader.class);
         List<Address> addressList = new ArrayList<>();
         // AddressScheme is just a placeholder and will not affect topic route result in this case.
+        // AddressScheme 在此仅为占位参数, 不影响路由结果
         addressList.add(new Address(HostAndPort.fromParts(proxyConfig.getRemotingAccessAddr(), proxyConfig.getRemotingListenPort())));
         ProxyTopicRouteData proxyTopicRouteData = messagingProcessor.getTopicRouteDataForProxy(context, addressList, requestHeader.getTopic());
         TopicRouteData topicRouteData = proxyTopicRouteData.buildTopicRouteData();

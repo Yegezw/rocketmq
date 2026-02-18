@@ -29,18 +29,37 @@ import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.header.PullMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
+/**
+ * 拉消息请求处理活动
+ */
 public class PullMessageActivity extends AbstractRemotingActivity {
+    /**
+     * 构造拉消息活动处理器
+     *
+     * @param requestPipeline 请求处理管道
+     * @param messagingProcessor 消息处理核心组件
+     */
     public PullMessageActivity(RequestPipeline requestPipeline,
         MessagingProcessor messagingProcessor) {
         super(requestPipeline, messagingProcessor);
     }
 
+    /**
+     * 处理拉消息请求, 并在缺失订阅时补齐订阅信息
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return Broker 响应或错误响应
+     * @throws Exception 处理异常
+     */
     @Override
     protected RemotingCommand processRequest0(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws Exception {
         PullMessageRequestHeader requestHeader = (PullMessageRequestHeader) request.decodeCommandCustomHeader(PullMessageRequestHeader.class);
         int sysFlag = requestHeader.getSysFlag();
         if (!PullSysFlag.hasSubscriptionFlag(sysFlag)) {
+            // 请求未携带订阅信息时, 从当前消费组元数据中补齐订阅
             ConsumerGroupInfo consumerInfo = messagingProcessor.getConsumerGroupInfo(context, requestHeader.getConsumerGroup());
             if (consumerInfo == null) {
                 return RemotingCommand.buildErrorResponse(ResponseCode.SUBSCRIPTION_NOT_LATEST,
@@ -57,6 +76,7 @@ public class PullMessageActivity extends AbstractRemotingActivity {
             request.writeCustomHeader(requestHeader);
             request.makeCustomHeaderToNet();
         }
+        // Broker 处理超时 = 长轮询挂起时间 + 网络与转发预留时间
         long timeoutMillis = requestHeader.getSuspendTimeoutMillis() + Duration.ofSeconds(10).toMillis();
         return request(ctx, request, context, timeoutMillis);
     }

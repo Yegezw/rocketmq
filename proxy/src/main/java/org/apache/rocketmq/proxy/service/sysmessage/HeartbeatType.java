@@ -17,7 +17,16 @@
 
 package org.apache.rocketmq.proxy.service.sysmessage;
 
+/**
+ * 心跳同步消息类型
+ */
 public enum HeartbeatType {
+    /**
+     * 注册消费者
+     */
     REGISTER,
+    /**
+     * 注销消费者
+     */
     UNREGISTER;
 }

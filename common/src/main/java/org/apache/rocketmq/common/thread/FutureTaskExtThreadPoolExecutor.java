@@ -25,8 +25,22 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import org.apache.rocketmq.common.future.FutureTaskExt;
 
+/**
+ * 使用 FutureTaskExt 封装任务的线程池执行器
+ */
 public class FutureTaskExtThreadPoolExecutor extends ThreadPoolExecutor {
 
+    /**
+     * 创建支持 FutureTaskExt 的线程池执行器
+     *
+     * @param corePoolSize 核心线程数
+     * @param maximumPoolSize 最大线程数
+     * @param keepAliveTime 线程空闲存活时长
+     * @param unit 时间单位
+     * @param workQueue 阻塞队列
+     * @param threadFactory 线程工厂
+     * @param handler 拒绝策略
+     */
     public FutureTaskExtThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime,
         TimeUnit unit,
         BlockingQueue<Runnable> workQueue,
@@ -35,6 +49,14 @@ public class FutureTaskExtThreadPoolExecutor extends ThreadPoolExecutor {
         super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue, threadFactory, handler);
     }
 
+    /**
+     * 创建可追踪原始 Runnable 的 FutureTask 包装任务
+     *
+     * @param runnable 原始任务
+     * @param value 任务结果
+     * @param <T> 结果类型
+     * @return FutureTaskExt 包装任务
+     */
     @Override
     protected <T> RunnableFuture<T> newTaskFor(final Runnable runnable, final T value) {
         return new FutureTaskExt<>(runnable, value);

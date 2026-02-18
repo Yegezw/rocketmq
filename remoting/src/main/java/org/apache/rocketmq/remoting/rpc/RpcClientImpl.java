@@ -18,9 +18,6 @@ package org.apache.rocketmq.remoting.rpc;
 
 import io.netty.util.concurrent.ImmediateEventExecutor;
 import io.netty.util.concurrent.Promise;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.Future;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.InvokeCallback;
 import org.apache.rocketmq.remoting.RemotingClient;
@@ -30,32 +27,63 @@ import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.admin.TopicStatsTable;
-import org.apache.rocketmq.remoting.protocol.header.GetEarliestMsgStoretimeResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.GetMinOffsetResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.PullMessageResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.SearchOffsetResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.UpdateConsumerOffsetResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.*;
 import org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Future;
+
+/**
+ * RPC 客户端默认实现<br>
+ * 基于 remoting 客户端完成各类请求调用
+ */
 public class RpcClientImpl implements RpcClient {
 
+    /**
+     * 客户端元数据
+     */
     private ClientMetadata clientMetadata;
 
+    /**
+     * remoting 客户端
+     */
     private RemotingClient remotingClient;
 
+    /**
+     * 客户端 Hook 列表
+     */
     private List<RpcClientHook> clientHookList = new ArrayList<>();
 
+    /**
+     * 构造 RPC 客户端实现
+     *
+     * @param clientMetadata 客户端元数据
+     * @param remotingClient remoting 客户端
+     */
     public RpcClientImpl(ClientMetadata clientMetadata, RemotingClient remotingClient) {
         this.clientMetadata = clientMetadata;
         this.remotingClient = remotingClient;
     }
 
+    /**
+     * 注册客户端 Hook
+     *
+     * @param hook Hook 实例
+     */
     public void registerHook(RpcClientHook hook) {
         clientHookList.add(hook);
     }
 
+    /**
+     * 按消息队列发起 RPC 调用
+     *
+     * @param mq 消息队列
+     * @param request RPC 请求
+     * @param timeoutMs 超时时间 毫秒
+     * @return RPC 响应 Future
+     * @throws RpcException RPC 异常
+     */
     @Override
     public Future<RpcResponse>  invoke(MessageQueue mq, RpcRequest request, long timeoutMs) throws RpcException {
         String bname =  clientMetadata.getBrokerNameFromMessageQueue(mq);
@@ -64,10 +92,23 @@ public class RpcClientImpl implements RpcClient {
     }
 
 
+    /**
+     * 创建响应 Promise
+     *
+     * @return 响应 Promise
+     */
     public Promise<RpcResponse> createResponseFuture()  {
         return ImmediateEventExecutor.INSTANCE.newPromise();
     }
 
+    /**
+     * 发起 RPC 调用
+     *
+     * @param request RPC 请求
+     * @param timeoutMs 超时时间 毫秒
+     * @return RPC 响应 Future
+     * @throws RpcException RPC 异常
+     */
     @Override
     public Future<RpcResponse>  invoke(RpcRequest request, long timeoutMs) throws RpcException {
         if (clientHookList.size() > 0) {
@@ -75,6 +116,7 @@ public class RpcClientImpl implements RpcClient {
                 RpcResponse response = rpcClientHook.beforeRequest(request);
                 if (response != null) {
                     //For 1.6, there is not easy-to-use future impl
+                    // Java 1.6 无易用 Future 实现 直接返回成功 Promise
                     return createResponseFuture().setSuccess(response);
                 }
             }
@@ -121,7 +163,6 @@ public class RpcClientImpl implements RpcClient {
         return rpcResponsePromise;
     }
 
-
     private String getBrokerAddrByNameOrException(String bname) throws RpcException {
         String addr = this.clientMetadata.findMasterBrokerAddr(bname);
         if (addr == null) {
@@ -131,10 +172,19 @@ public class RpcClientImpl implements RpcClient {
     }
 
 
+    /**
+     * 处理请求失败响应
+     *
+     * @param addr 目标地址
+     * @param requestCommand 请求命令
+     * @param responseFuture 异步响应 Future
+     * @param rpcResponsePromise RPC 响应 Promise
+     */
     private void processFailedResponse(String addr, RemotingCommand requestCommand,  ResponseFuture responseFuture, Promise<RpcResponse> rpcResponsePromise) {
         RemotingCommand responseCommand = responseFuture.getResponseCommand();
         if (responseCommand != null) {
             //this should not happen
+            // 理论上失败场景不应出现响应命令
             return;
         }
         int errorCode = ResponseCode.RPC_UNKNOWN;
@@ -152,6 +202,15 @@ public class RpcClientImpl implements RpcClient {
     }
 
 
+    /**
+     * 处理拉消息请求
+     *
+     * @param addr 目标地址
+     * @param rpcRequest RPC 请求
+     * @param timeoutMillis 超时时间 毫秒
+     * @return RPC 响应 Promise
+     * @throws Exception 调用过程异常
+     */
     public Promise<RpcResponse> handlePullMessage(final String addr, RpcRequest rpcRequest, long timeoutMillis)  throws Exception {
         final RemotingCommand requestCommand = RpcClientUtils.createCommandForRpcRequest(rpcRequest);
 
@@ -199,6 +258,15 @@ public class RpcClientImpl implements RpcClient {
         return rpcResponsePromise;
     }
 
+    /**
+     * 处理按时间查询偏移量请求
+     *
+     * @param addr 目标地址
+     * @param rpcRequest RPC 请求
+     * @param timeoutMillis 超时时间 毫秒
+     * @return RPC 响应 Promise
+     * @throws Exception 调用过程异常
+     */
     public Promise<RpcResponse> handleSearchOffset(String addr, RpcRequest rpcRequest, long timeoutMillis) throws Exception {
         final Promise<RpcResponse> rpcResponsePromise = createResponseFuture();
 
@@ -220,7 +288,15 @@ public class RpcClientImpl implements RpcClient {
     }
 
 
-
+    /**
+     * 处理查询消费位点请求
+     *
+     * @param addr 目标地址
+     * @param rpcRequest RPC 请求
+     * @param timeoutMillis 超时时间 毫秒
+     * @return RPC 响应 Promise
+     * @throws Exception 调用过程异常
+     */
     public Promise<RpcResponse> handleQueryConsumerOffset(String addr, RpcRequest rpcRequest, long timeoutMillis) throws Exception {
         final Promise<RpcResponse> rpcResponsePromise = createResponseFuture();
 
@@ -245,6 +321,15 @@ public class RpcClientImpl implements RpcClient {
         return rpcResponsePromise;
     }
 
+    /**
+     * 处理更新消费位点请求
+     *
+     * @param addr 目标地址
+     * @param rpcRequest RPC 请求
+     * @param timeoutMillis 超时时间 毫秒
+     * @return RPC 响应 Promise
+     * @throws Exception 调用过程异常
+     */
     public Promise<RpcResponse> handleUpdateConsumerOffset(String addr, RpcRequest rpcRequest, long timeoutMillis) throws Exception {
         final Promise<RpcResponse> rpcResponsePromise = createResponseFuture();
 
@@ -265,6 +350,16 @@ public class RpcClientImpl implements RpcClient {
         return rpcResponsePromise;
     }
 
+    /**
+     * 处理通用 Body 请求
+     *
+     * @param addr 目标地址
+     * @param rpcRequest RPC 请求
+     * @param timeoutMillis 超时时间 毫秒
+     * @param bodyClass 响应体类型
+     * @return RPC 响应 Promise
+     * @throws Exception 调用过程异常
+     */
     public Promise<RpcResponse> handleCommonBodyRequest(final String addr, RpcRequest rpcRequest, long timeoutMillis, Class bodyClass) throws Exception {
         final Promise<RpcResponse> rpcResponsePromise = createResponseFuture();
         RemotingCommand requestCommand = RpcClientUtils.createCommandForRpcRequest(rpcRequest);
@@ -282,6 +377,15 @@ public class RpcClientImpl implements RpcClient {
         return rpcResponsePromise;
     }
 
+    /**
+     * 处理查询最小位点请求
+     *
+     * @param addr 目标地址
+     * @param rpcRequest RPC 请求
+     * @param timeoutMillis 超时时间 毫秒
+     * @return RPC 响应 Promise
+     * @throws Exception 调用过程异常
+     */
     public Promise<RpcResponse> handleGetMinOffset(String addr, RpcRequest rpcRequest, long timeoutMillis) throws Exception {
         final Promise<RpcResponse> rpcResponsePromise = createResponseFuture();
 
@@ -303,6 +407,15 @@ public class RpcClientImpl implements RpcClient {
         return rpcResponsePromise;
     }
 
+    /**
+     * 处理查询最大位点请求
+     *
+     * @param addr 目标地址
+     * @param rpcRequest RPC 请求
+     * @param timeoutMillis 超时时间 毫秒
+     * @return RPC 响应 Promise
+     * @throws Exception 调用过程异常
+     */
     public Promise<RpcResponse> handleGetMaxOffset(String addr, RpcRequest rpcRequest, long timeoutMillis) throws Exception {
         final Promise<RpcResponse> rpcResponsePromise = createResponseFuture();
 
@@ -324,6 +437,15 @@ public class RpcClientImpl implements RpcClient {
         return rpcResponsePromise;
     }
 
+    /**
+     * 处理查询最早存储时间请求
+     *
+     * @param addr 目标地址
+     * @param rpcRequest RPC 请求
+     * @param timeoutMillis 超时时间 毫秒
+     * @return RPC 响应 Promise
+     * @throws Exception 调用过程异常
+     */
     public Promise<RpcResponse> handleGetEarliestMsgStoretime(String addr, RpcRequest rpcRequest, long timeoutMillis) throws Exception {
         final Promise<RpcResponse> rpcResponsePromise = createResponseFuture();
 

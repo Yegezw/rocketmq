@@ -16,21 +16,48 @@
  */
 package org.apache.rocketmq.common.constant;
 
+/**
+ * 通用字符常量定义
+ */
 public class CommonConstants {
 
+    /**
+     * 冒号字符
+     */
     public static final String COLON = ":";
 
+    /**
+     * 星号字符
+     */
     public static final String ASTERISK = "*";
 
+    /**
+     * 逗号字符
+     */
     public static final String COMMA = ",";
 
+    /**
+     * 等号字符
+     */
     public static final String EQUAL = "=";
 
+    /**
+     * 斜杠字符
+     */
     public static final String SLASH = "/";
 
+    /**
+     * 空格字符
+     */
     public static final String SPACE = " ";
 
+    /**
+     * 连字符
+     */
     public static final String HYPHEN = "-";
 
+    /**
+     * 井号字符
+     */
     public static final String POUND = "#";
 }

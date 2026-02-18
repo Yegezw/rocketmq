@@ -21,8 +21,18 @@ import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.remoting.RPCHook;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * 动态扩展字段 RPC Hook<br>
+ * 在请求发出前注入机房相关扩展字段
+ */
 public class DynamicalExtFieldRPCHook implements RPCHook {
 
+    /**
+     * 请求发送前注入动态扩展字段
+     *
+     * @param remoteAddr 远端地址
+     * @param request 请求命令
+     */
     @Override
     public void doBeforeRequest(String remoteAddr, RemotingCommand request) {
         String zoneName = System.getProperty(MixAll.ROCKETMQ_ZONE_PROPERTY, System.getenv(MixAll.ROCKETMQ_ZONE_ENV));
@@ -35,6 +45,13 @@ public class DynamicalExtFieldRPCHook implements RPCHook {
         }
     }
 
+    /**
+     * 请求响应后回调
+     *
+     * @param remoteAddr 远端地址
+     * @param request 请求命令
+     * @param response 响应命令
+     */
     @Override
     public void doAfterResponse(String remoteAddr, RemotingCommand request, RemotingCommand response) {
 

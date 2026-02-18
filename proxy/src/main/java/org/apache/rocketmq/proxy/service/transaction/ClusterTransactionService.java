@@ -46,20 +46,57 @@ import org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData;
 import org.apache.rocketmq.remoting.protocol.heartbeat.ProducerData;
 import org.apache.rocketmq.remoting.protocol.route.BrokerData;
 
+/**
+ * 集群模式事务服务, 负责事务订阅维护与心跳上报
+ */
 public class ClusterTransactionService extends AbstractTransactionService {
+    /**
+     * Proxy 日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
 
+    /**
+     * 事务心跳使用的客户端标识
+     */
     private static final String TRANS_HEARTBEAT_CLIENT_ID = "rmq-proxy-producer-client";
 
+    /**
+     * MQ 客户端工厂
+     */
     private final MQClientAPIFactory mqClientAPIFactory;
+    /**
+     * 主题路由服务
+     */
     private final TopicRouteService topicRouteService;
+    /**
+     * Producer 管理器
+     */
     private final ProducerManager producerManager;
 
+    /**
+     * 事务心跳发送线程池
+     */
     private ThreadPoolExecutor heartbeatExecutors;
+    /**
+     * 生产者组到集群集合的订阅关系
+     */
     private final Map<String /* group */, Set<ClusterData>/* cluster list */> groupClusterData = new ConcurrentHashMap<>();
+    /**
+     * Broker 地址到名称映射缓存
+     */
     private final AtomicReference<Map<String /* brokerAddr */, String /* brokerName */>> brokerAddrNameMapRef = new AtomicReference<>();
+    /**
+     * 事务心跳后台线程
+     */
     private TxHeartbeatServiceThread txHeartbeatServiceThread;
 
+    /**
+     * 初始化集群事务服务
+     *
+     * @param topicRouteService 主题路由服务
+     * @param producerManager Producer 管理器
+     * @param mqClientAPIFactory MQ 客户端工厂
+     */
     public ClusterTransactionService(TopicRouteService topicRouteService, ProducerManager producerManager,
         MQClientAPIFactory mqClientAPIFactory) {
         this.topicRouteService = topicRouteService;
@@ -67,6 +104,13 @@ public class ClusterTransactionService extends AbstractTransactionService {
         this.mqClientAPIFactory = mqClientAPIFactory;
     }
 
+    /**
+     * 为生产者组追加多个事务主题订阅
+     *
+     * @param ctx 请求上下文
+     * @param group 生产者组
+     * @param topicList 主题列表
+     */
     @Override
     public void addTransactionSubscription(ProxyContext ctx, String group, List<String> topicList) {
         for (String topic : topicList) {
@@ -74,6 +118,13 @@ public class ClusterTransactionService extends AbstractTransactionService {
         }
     }
 
+    /**
+     * 为生产者组追加单个事务主题订阅
+     *
+     * @param ctx 请求上下文
+     * @param group 生产者组
+     * @param topic 主题
+     */
     @Override
     public void addTransactionSubscription(ProxyContext ctx, String group, String topic) {
         try {
@@ -89,6 +140,13 @@ public class ClusterTransactionService extends AbstractTransactionService {
         }
     }
 
+    /**
+     * 使用新主题集合替换事务订阅
+     *
+     * @param ctx 请求上下文
+     * @param group 生产者组
+     * @param topicList 主题列表
+     */
     @Override
     public void replaceTransactionSubscription(ProxyContext ctx, String group, List<String> topicList) {
         Set<ClusterData> clusterDataSet = new HashSet<>();
@@ -117,11 +175,20 @@ public class ClusterTransactionService extends AbstractTransactionService {
         return Collections.emptySet();
     }
 
+    /**
+     * 取消生产者组全部事务主题订阅
+     *
+     * @param ctx 请求上下文
+     * @param group 生产者组
+     */
     @Override
     public void unSubscribeAllTransactionTopic(ProxyContext ctx, String group) {
         groupClusterData.remove(group);
     }
 
+    /**
+     * 扫描在线生产者并向目标集群发送事务心跳
+     */
     public void scanProducerHeartBeat() {
         Set<String> groupSet = groupClusterData.keySet();
 
@@ -184,6 +251,13 @@ public class ClusterTransactionService extends AbstractTransactionService {
         return groupClusterData;
     }
 
+    /**
+     * 向指定集群批量发送事务心跳
+     *
+     * @param clusterName 集群名称
+     * @param heartbeatDataList 心跳数据列表
+     * @param brokerAddrNameMap Broker 地址到名称映射
+     */
     protected void sendHeartBeatToCluster(String clusterName, List<HeartbeatData> heartbeatDataList, Map<String, String> brokerAddrNameMap) {
         if (heartbeatDataList == null) {
             return;
@@ -194,6 +268,13 @@ public class ClusterTransactionService extends AbstractTransactionService {
         this.brokerAddrNameMapRef.set(brokerAddrNameMap);
     }
 
+    /**
+     * 向指定集群发送单条事务心跳
+     *
+     * @param clusterName 集群名称
+     * @param heartbeatData 心跳数据
+     * @param brokerAddrNameMap Broker 地址到名称映射
+     */
     protected void sendHeartBeatToCluster(String clusterName, HeartbeatData heartbeatData, Map<String, String> brokerAddrNameMap) {
         try {
             MessageQueueView messageQueue = this.topicRouteService.getAllMessageQueueView(ProxyContext.createForInner(this.getClass()), clusterName);
@@ -226,9 +307,20 @@ public class ClusterTransactionService extends AbstractTransactionService {
         return brokerAddrNameMapRef.get().get(brokerAddr);
     }
 
+    /**
+     * 集群维度订阅数据
+     */
     static class ClusterData {
+        /**
+         * 集群名称
+         */
         private final String cluster;
 
+        /**
+         * 初始化集群订阅数据
+         *
+         * @param cluster 集群名称
+         */
         public ClusterData(String cluster) {
             this.cluster = cluster;
         }
@@ -237,6 +329,12 @@ public class ClusterTransactionService extends AbstractTransactionService {
             return cluster;
         }
 
+        /**
+         * 基于集群名称判断对象相等
+         *
+         * @param obj 比较对象
+         * @return 是否相等
+         */
         @Override
         public boolean equals(Object obj) {
             if (obj == this) {
@@ -250,12 +348,20 @@ public class ClusterTransactionService extends AbstractTransactionService {
             return cluster.equals(other.cluster);
         }
 
+        /**
+         * 返回基于集群名称的哈希值
+         *
+         * @return 哈希值
+         */
         @Override
         public int hashCode() {
             return cluster.hashCode();
         }
     }
 
+    /**
+     * 定时触发事务心跳扫描的后台线程
+     */
     class TxHeartbeatServiceThread extends ServiceThread {
 
         @Override
@@ -263,6 +369,9 @@ public class ClusterTransactionService extends AbstractTransactionService {
             return TxHeartbeatServiceThread.class.getName();
         }
 
+        /**
+         * 线程主循环, 按配置周期触发扫描
+         */
         @Override
         public void run() {
             while (!this.isStopped()) {
@@ -270,12 +379,18 @@ public class ClusterTransactionService extends AbstractTransactionService {
             }
         }
 
+        /**
+         * 每次等待结束后执行心跳扫描
+         */
         @Override
         protected void onWaitEnd() {
             scanProducerHeartBeat();
         }
     }
 
+    /**
+     * 启动事务服务与心跳线程
+     */
     @Override
     public void start() throws Exception {
         ProxyConfig proxyConfig = ConfigurationManager.getProxyConfig();
@@ -292,6 +407,9 @@ public class ClusterTransactionService extends AbstractTransactionService {
         );
     }
 
+    /**
+     * 停止事务服务并释放线程资源
+     */
     @Override
     public void shutdown() throws Exception {
         txHeartbeatServiceThread.shutdown();

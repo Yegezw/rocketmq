@@ -45,22 +45,61 @@ import org.apache.rocketmq.proxy.service.transaction.LocalTransactionService;
 import org.apache.rocketmq.proxy.service.transaction.TransactionService;
 import org.apache.rocketmq.remoting.RPCHook;
 
+/**
+ * 本地模式服务管理器, 负责组装本地 Broker 依赖的各项服务
+ */
 public class LocalServiceManager extends AbstractStartAndShutdown implements ServiceManager {
 
+    /**
+     * Broker 控制器
+     */
     private final BrokerController brokerController;
+    /**
+     * 主题路由服务
+     */
     private final TopicRouteService topicRouteService;
+    /**
+     * 消息服务
+     */
     private final MessageService messageService;
+    /**
+     * 事务服务
+     */
     private final TransactionService transactionService;
+    /**
+     * 代理转发服务
+     */
     private final ProxyRelayService proxyRelayService;
+    /**
+     * 元数据服务
+     */
     private final MetadataService metadataService;
+    /**
+     * 管理服务
+     */
     private final AdminService adminService;
 
+    /**
+     * MQ 客户端 API 工厂
+     */
     private final MQClientAPIFactory mqClientAPIFactory;
+    /**
+     * 通道管理器
+     */
     private final ChannelManager channelManager;
 
+    /**
+     * 本地定时任务线程池
+     */
     private final ScheduledExecutorService scheduledExecutorService = ThreadUtils.newSingleThreadScheduledExecutor(
         new ThreadFactoryImpl("LocalServiceManagerScheduledThread"));
 
+    /**
+     * 构造本地模式服务管理器
+     *
+     * @param brokerController Broker 控制器
+     * @param rpcHook RPC 钩子
+     */
     public LocalServiceManager(BrokerController brokerController, RPCHook rpcHook) {
         this.brokerController = brokerController;
         this.channelManager = new ChannelManager();
@@ -84,6 +123,9 @@ public class LocalServiceManager extends AbstractStartAndShutdown implements Ser
         this.init();
     }
 
+    /**
+     * 初始化服务启动与关闭流程
+     */
     protected void init() {
         this.appendStartAndShutdown(this.mqClientAPIFactory);
         this.appendStartAndShutdown(this.topicRouteService);
@@ -130,12 +172,25 @@ public class LocalServiceManager extends AbstractStartAndShutdown implements Ser
         return this.adminService;
     }
 
+    /**
+     * 本地模式附加启动与关闭流程
+     */
     private class LocalServiceManagerStartAndShutdown implements StartAndShutdown {
+        /**
+         * 启动本地定时清理任务
+         *
+         * @throws Exception 启动异常
+         */
         @Override
         public void start() throws Exception {
             LocalServiceManager.this.scheduledExecutorService.scheduleWithFixedDelay(channelManager::scanAndCleanChannels, 5, 5, TimeUnit.MINUTES);
         }
 
+        /**
+         * 关闭本地定时任务线程池
+         *
+         * @throws Exception 关闭异常
+         */
         @Override
         public void shutdown() throws Exception {
             LocalServiceManager.this.scheduledExecutorService.shutdown();

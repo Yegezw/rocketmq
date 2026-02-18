@@ -32,13 +32,30 @@ import org.apache.rocketmq.proxy.grpc.v2.common.GrpcClientSettingsManager;
 import org.apache.rocketmq.proxy.grpc.v2.common.ResponseBuilder;
 import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 
+/**
+ * 修改消息不可见时长活动实现
+ */
 public class ChangeInvisibleDurationActivity extends AbstractMessingActivity {
 
+    /**
+     * 构造修改不可见时长活动对象
+     *
+     * @param messagingProcessor 消息处理器
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     */
     public ChangeInvisibleDurationActivity(MessagingProcessor messagingProcessor,
         GrpcClientSettingsManager grpcClientSettingsManager, GrpcChannelManager grpcChannelManager) {
         super(messagingProcessor, grpcClientSettingsManager, grpcChannelManager);
     }
 
+    /**
+     * 处理修改不可见时长请求
+     *
+     * @param ctx Proxy 上下文
+     * @param request 修改不可见时长请求
+     * @return 修改不可见时长响应 Future
+     */
     public CompletableFuture<ChangeInvisibleDurationResponse> changeInvisibleDuration(ProxyContext ctx,
         ChangeInvisibleDurationRequest request) {
         CompletableFuture<ChangeInvisibleDurationResponse> future = new CompletableFuture<>();
@@ -68,6 +85,14 @@ public class ChangeInvisibleDurationActivity extends AbstractMessingActivity {
         return future;
     }
 
+    /**
+     * 将内部 Ack 结果转换为 gRPC 响应
+     *
+     * @param ctx Proxy 上下文
+     * @param request 原始请求
+     * @param ackResult Ack 结果
+     * @return gRPC 响应
+     */
     protected ChangeInvisibleDurationResponse convertToChangeInvisibleDurationResponse(ProxyContext ctx,
         ChangeInvisibleDurationRequest request, AckResult ackResult) {
         if (AckStatus.OK.equals(ackResult.getStatus())) {

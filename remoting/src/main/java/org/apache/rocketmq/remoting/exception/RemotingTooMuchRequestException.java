@@ -16,9 +16,20 @@
  */
 package org.apache.rocketmq.remoting.exception;
 
+/**
+ * remoting 请求过载异常
+ */
 public class RemotingTooMuchRequestException extends RemotingException {
+    /**
+     * 序列化版本号
+     */
     private static final long serialVersionUID = 4326919581254519654L;
 
+    /**
+     * 按异常消息构造过载异常
+     *
+     * @param message 异常消息
+     */
     public RemotingTooMuchRequestException(String message) {
         super(message);
     }

@@ -21,10 +21,26 @@ import com.google.protobuf.GeneratedMessageV3;
 import io.grpc.Metadata;
 import org.apache.rocketmq.proxy.common.ProxyContext;
 
+/**
+ * gRPC 请求处理流水线接口, 用于串联多个请求处理阶段
+ */
 public interface RequestPipeline {
 
+    /**
+     * 执行当前流水线节点逻辑
+     *
+     * @param context Proxy 上下文
+     * @param headers gRPC 请求头
+     * @param request 请求体
+     */
     void execute(ProxyContext context, Metadata headers, GeneratedMessageV3 request);
 
+    /**
+     * 将当前节点拼接到给定上游节点之后
+     *
+     * @param source 上游流水线节点
+     * @return 组合后的流水线
+     */
     default RequestPipeline pipe(RequestPipeline source) {
         return (ctx, headers, request) -> {
             source.execute(ctx, headers, request);

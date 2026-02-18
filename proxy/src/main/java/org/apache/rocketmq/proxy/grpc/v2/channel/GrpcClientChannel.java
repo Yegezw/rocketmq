@@ -57,16 +57,46 @@ import org.apache.rocketmq.remoting.protocol.header.CheckTransactionStateRequest
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerRunningInfoRequestHeader;
 
+/**
+ * gRPC 客户端通道实现, 负责遥测命令下发与远端通道能力转换
+ */
 public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttributeGetter, RemoteChannelConverter {
+    /**
+     * Proxy 模块日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
 
+    /**
+     * gRPC 通道管理器
+     */
     private final GrpcChannelManager grpcChannelManager;
+    /**
+     * gRPC 客户端设置管理器
+     */
     private final GrpcClientSettingsManager grpcClientSettingsManager;
 
+    /**
+     * 遥测写入观察者引用
+     */
     private final AtomicReference<StreamObserver<TelemetryCommand>> telemetryCommandRef = new AtomicReference<>();
+    /**
+     * 遥测写入锁
+     */
     private final Object telemetryWriteLock = new Object();
+    /**
+     * 客户端标识
+     */
     private final String clientId;
 
+    /**
+     * 构造 gRPC 客户端通道
+     *
+     * @param proxyRelayService 代理转发服务
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     * @param ctx Proxy 上下文
+     * @param clientId 客户端标识
+     */
     public GrpcClientChannel(ProxyRelayService proxyRelayService, GrpcClientSettingsManager grpcClientSettingsManager,
         GrpcChannelManager grpcChannelManager, ProxyContext ctx, String clientId) {
         super(proxyRelayService, null, new GrpcChannelId(clientId),
@@ -91,6 +121,12 @@ public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttr
         return null;
     }
 
+    /**
+     * 从 Channel 扩展属性中解析客户端设置
+     *
+     * @param channel 网络通道
+     * @return 客户端设置, 不可解析时返回 null
+     */
     public static Settings parseChannelExtendAttribute(Channel channel) {
         if (ChannelHelper.getChannelProtocolType(channel).equals(ChannelProtocolType.GRPC_V2) &&
             channel instanceof ChannelExtendAttributeGetter) {
@@ -111,6 +147,11 @@ public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttr
         return null;
     }
 
+    /**
+     * 转换为远端通道描述对象
+     *
+     * @return 远端通道对象
+     */
     @Override
     public RemoteChannel toRemoteChannel() {
         return new RemoteChannel(
@@ -121,24 +162,51 @@ public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttr
             this.getChannelExtendAttribute());
     }
 
+    /**
+     * gRPC 通道标识实现
+     */
     protected static class GrpcChannelId implements ChannelId {
 
+        /**
+         * 客户端标识
+         */
         private final String clientId;
 
+        /**
+         * 构造通道标识
+         *
+         * @param clientId 客户端标识
+         */
         public GrpcChannelId(String clientId) {
             this.clientId = clientId;
         }
 
+        /**
+         * 返回短文本标识
+         *
+         * @return 短文本标识
+         */
         @Override
         public String asShortText() {
             return this.clientId;
         }
 
+        /**
+         * 返回长文本标识
+         *
+         * @return 长文本标识
+         */
         @Override
         public String asLongText() {
             return this.clientId;
         }
 
+        /**
+         * 比较通道标识顺序
+         *
+         * @param o 目标通道标识
+         * @return 比较结果
+         */
         @Override
         public int compareTo(ChannelId o) {
             if (this == o) {
@@ -159,6 +227,11 @@ public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttr
         this.telemetryCommandRef.set(future);
     }
 
+    /**
+     * 在观察者匹配时清理遥测观察者引用
+     *
+     * @param future 目标观察者
+     */
     protected void clearClientObserver(StreamObserver<TelemetryCommand> future) {
         this.telemetryCommandRef.compareAndSet(future, null);
     }
@@ -178,6 +251,12 @@ public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttr
         return this.telemetryCommandRef.get() != null;
     }
 
+    /**
+     * 处理非标准消息并在需要时下发遥测命令
+     *
+     * @param msg 待处理消息
+     * @return 异步执行结果
+     */
     @Override
     protected CompletableFuture<Void> processOtherMessage(Object msg) {
         if (msg instanceof TelemetryCommand) {
@@ -187,6 +266,15 @@ public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttr
         return CompletableFuture.completedFuture(null);
     }
 
+    /**
+     * 处理事务回查请求并下发 RecoverOrphanedTransactionCommand
+     *
+     * @param header 事务回查请求头
+     * @param messageExt 消息内容
+     * @param transactionData 事务数据
+     * @param responseFuture 响应 Future
+     * @return 异步执行结果
+     */
     @Override
     protected CompletableFuture<Void> processCheckTransaction(CheckTransactionStateRequestHeader header,
         MessageExt messageExt, TransactionData transactionData, CompletableFuture<ProxyRelayResult<Void>> responseFuture) {
@@ -207,6 +295,14 @@ public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttr
         return writeFuture;
     }
 
+    /**
+     * 处理消费端运行信息查询请求
+     *
+     * @param command remoting 命令
+     * @param header 查询请求头
+     * @param responseFuture 响应 Future
+     * @return 异步执行结果
+     */
     @Override
     protected CompletableFuture<Void> processGetConsumerRunningInfo(RemotingCommand command,
         GetConsumerRunningInfoRequestHeader header,
@@ -222,6 +318,15 @@ public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttr
         return CompletableFuture.completedFuture(null);
     }
 
+    /**
+     * 处理直接消费校验请求并下发 VerifyMessageCommand
+     *
+     * @param command remoting 命令
+     * @param header 请求头
+     * @param messageExt 消息内容
+     * @param responseFuture 响应 Future
+     * @return 异步执行结果
+     */
     @Override
     protected CompletableFuture<Void> processConsumeMessageDirectly(RemotingCommand command,
         ConsumeMessageDirectlyResultRequestHeader header,
@@ -239,6 +344,11 @@ public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttr
         return clientId;
     }
 
+    /**
+     * 向客户端写入遥测命令
+     *
+     * @param command 遥测命令
+     */
     public void writeTelemetryCommand(TelemetryCommand command) {
         StreamObserver<TelemetryCommand> observer = this.telemetryCommandRef.get();
         if (observer == null) {
@@ -260,6 +370,11 @@ public class GrpcClientChannel extends ProxyChannel implements ChannelExtendAttr
         }
     }
 
+    /**
+     * 返回通道可读字符串
+     *
+     * @return 通道字符串表示
+     */
     @Override
     public String toString() {
         return MoreObjects.toStringHelper(this)

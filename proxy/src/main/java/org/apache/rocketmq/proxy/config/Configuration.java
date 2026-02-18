@@ -32,12 +32,32 @@ import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 
+/**
+ * Proxy 配置加载器
+ */
 public class Configuration {
+    /**
+     * 配置加载日志记录器
+     */
     private final static Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
+    /**
+     * Proxy 配置引用
+     */
     private final AtomicReference<ProxyConfig> proxyConfigReference = new AtomicReference<>();
+    /**
+     * 鉴权配置引用
+     */
     private final AtomicReference<AuthConfig> authConfigReference = new AtomicReference<>();
+    /**
+     * 配置文件路径系统属性键
+     */
     public static final String CONFIG_PATH_PROPERTY = "com.rocketmq.proxy.configPath";
 
+    /**
+     * 初始化配置对象并装配 Proxy 与 Auth 配置
+     *
+     * @throws Exception 配置加载异常
+     */
     public void init() throws Exception {
         String proxyConfigData = loadJsonConfig();
 
@@ -51,6 +71,12 @@ public class Configuration {
         authConfig.setClusterName(proxyConfig.getRocketMQClusterName());
     }
 
+    /**
+     * 加载 JSON 配置内容
+     *
+     * @return 配置文件 JSON 字符串
+     * @throws Exception 读取配置异常
+     */
     public static String loadJsonConfig() throws Exception {
         String configFileName = ProxyConfig.DEFAULT_CONFIG_FILE_NAME;
         String filePath = System.getProperty(CONFIG_PATH_PROPERTY);

@@ -52,13 +52,30 @@ import org.apache.rocketmq.proxy.service.route.ProxyTopicRouteData;
 import org.apache.rocketmq.remoting.protocol.route.QueueData;
 import org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig;
 
+/**
+ * 路由活动实现, 负责查询主题路由与队列分配
+ */
 public class RouteActivity extends AbstractMessingActivity {
 
+    /**
+     * 构造路由活动对象
+     *
+     * @param messagingProcessor 消息处理器
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     */
     public RouteActivity(MessagingProcessor messagingProcessor,
         GrpcClientSettingsManager grpcClientSettingsManager, GrpcChannelManager grpcChannelManager) {
         super(messagingProcessor, grpcClientSettingsManager, grpcChannelManager);
     }
 
+    /**
+     * 查询主题路由并返回队列列表
+     *
+     * @param ctx Proxy 上下文
+     * @param request 路由查询请求
+     * @return 路由查询响应 Future
+     */
     public CompletableFuture<QueryRouteResponse> queryRoute(ProxyContext ctx, QueryRouteRequest request) {
         CompletableFuture<QueryRouteResponse> future = new CompletableFuture<>();
         try {
@@ -95,6 +112,13 @@ public class RouteActivity extends AbstractMessingActivity {
         return future;
     }
 
+    /**
+     * 查询消费分配结果
+     *
+     * @param ctx Proxy 上下文
+     * @param request 分配查询请求
+     * @return 分配查询响应 Future
+     */
     public CompletableFuture<QueryAssignmentResponse> queryAssignment(ProxyContext ctx,
         QueryAssignmentRequest request) {
         CompletableFuture<QueryAssignmentResponse> future = new CompletableFuture<>();
@@ -169,6 +193,12 @@ public class RouteActivity extends AbstractMessingActivity {
         return future;
     }
 
+    /**
+     * 将权限位转换为 gRPC 权限枚举
+     *
+     * @param perm 权限位
+     * @return gRPC 权限枚举
+     */
     protected Permission convertToPermission(int perm) {
         boolean isReadable = PermName.isReadable(perm);
         boolean isWriteable = PermName.isWriteable(perm);
@@ -184,6 +214,12 @@ public class RouteActivity extends AbstractMessingActivity {
         return Permission.NONE;
     }
 
+    /**
+     * 将 gRPC Endpoints 转换为内部地址列表
+     *
+     * @param endpoints gRPC Endpoints
+     * @return 内部地址列表
+     */
     protected List<org.apache.rocketmq.proxy.common.Address> convertToAddressList(Endpoints endpoints) {
 
         boolean useEndpointPort = ConfigurationManager.getProxyConfig().isUseEndpointPortFromRequest();
@@ -203,6 +239,12 @@ public class RouteActivity extends AbstractMessingActivity {
 
     }
 
+    /**
+     * 构建 brokerName 到 Broker 对象映射
+     *
+     * @param brokerDataList Proxy 路由中的 Broker 数据
+     * @return brokerName 到 brokerId 映射表
+     */
     protected Map<String /*brokerName*/, Map<Long /*brokerID*/, Broker>> buildBrokerMap(
         List<ProxyTopicRouteData.ProxyBrokerData> brokerDataList) {
         Map<String, Map<Long, Broker>> brokerMap = new HashMap<>();
@@ -237,6 +279,15 @@ public class RouteActivity extends AbstractMessingActivity {
         return brokerMap;
     }
 
+    /**
+     * 根据队列路由数据生成 gRPC MessageQueue 列表
+     *
+     * @param queueData 队列路由数据
+     * @param topic 主题资源
+     * @param topicMessageType 主题消息类型
+     * @param broker Broker 节点
+     * @return MessageQueue 列表
+     */
     protected List<MessageQueue> genMessageQueueFromQueueData(QueueData queueData, Resource topic,
         TopicMessageType topicMessageType, Broker broker) {
         List<MessageQueue> messageQueueList = new ArrayList<>();
@@ -258,6 +309,7 @@ public class RouteActivity extends AbstractMessingActivity {
         }
 
         // r here means readOnly queue nums, w means writeOnly queue nums, while rw means both readable and writable queue nums.
+        // r 表示只读队列数量, w 表示只写队列数量, rw 表示可读可写队列数量
         int queueIdIndex = 0;
         for (int i = 0; i < r; i++) {
             MessageQueue messageQueue = MessageQueue.newBuilder().setBroker(broker).setTopic(topic)
@@ -298,6 +350,12 @@ public class RouteActivity extends AbstractMessingActivity {
         return messageQueueList;
     }
 
+    /**
+     * 将主题消息类型转换为 gRPC 消息类型列表
+     *
+     * @param topicMessageType 主题消息类型
+     * @return gRPC 消息类型列表
+     */
     private List<MessageType> parseTopicMessageType(TopicMessageType topicMessageType) {
         switch (topicMessageType) {
             case NORMAL:

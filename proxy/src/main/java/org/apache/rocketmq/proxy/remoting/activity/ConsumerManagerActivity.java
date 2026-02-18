@@ -44,11 +44,29 @@ import org.apache.rocketmq.proxy.processor.MessagingProcessor;
 import org.apache.rocketmq.proxy.remoting.pipeline.RequestPipeline;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * 消费者管理请求处理活动
+ */
 public class ConsumerManagerActivity extends AbstractRemotingActivity {
+    /**
+     * 构造消费者管理活动处理器
+     *
+     * @param requestPipeline 请求处理管道
+     * @param messagingProcessor 消息处理核心组件
+     */
     public ConsumerManagerActivity(RequestPipeline requestPipeline, MessagingProcessor messagingProcessor) {
         super(requestPipeline, messagingProcessor);
     }
 
+    /**
+     * 根据请求码分发消费者管理相关请求
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 请求处理结果
+     * @throws Exception 处理异常
+     */
     @Override
     protected RemotingCommand processRequest0(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws Exception {
@@ -79,6 +97,15 @@ public class ConsumerManagerActivity extends AbstractRemotingActivity {
         return null;
     }
 
+    /**
+     * 查询指定消费组下的客户端 ID 列表
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 消费者列表响应
+     * @throws Exception 处理异常
+     */
     protected RemotingCommand getConsumerListByGroup(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws Exception {
         RemotingCommand response = RemotingCommand.createResponseCommand(GetConsumerListByGroupResponseHeader.class);
@@ -92,6 +119,15 @@ public class ConsumerManagerActivity extends AbstractRemotingActivity {
         return response;
     }
 
+    /**
+     * 查询消费组连接详情
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 消费连接响应
+     * @throws Exception 处理异常
+     */
     protected RemotingCommand getConsumerConnectionList(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws Exception {
         RemotingCommand response = RemotingCommand.createResponseCommand(GetConsumerConnectionListRequestHeader.class);
@@ -129,12 +165,22 @@ public class ConsumerManagerActivity extends AbstractRemotingActivity {
         return response;
     }
 
+    /**
+     * 处理批量加锁队列请求
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 返回 null 表示异步写回, 否则返回本地错误响应
+     * @throws Exception 处理异常
+     */
     protected RemotingCommand lockBatchMQ(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws Exception {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
         LockBatchRequestBody requestBody = LockBatchRequestBody.decode(request.getBody(), LockBatchRequestBody.class);
         Set<MessageQueue> mqSet = requestBody.getMqSet();
         if (mqSet.isEmpty()) {
+            // 空集合直接返回错误提示, 避免无效转发
             response.setBody(requestBody.encode());
             response.setRemark("MessageQueue set is empty");
             return response;
@@ -150,12 +196,22 @@ public class ConsumerManagerActivity extends AbstractRemotingActivity {
         return null;
     }
 
+    /**
+     * 处理批量解锁队列请求
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 返回 null 表示异步写回, 否则返回本地错误响应
+     * @throws Exception 处理异常
+     */
     protected RemotingCommand unlockBatchMQ(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws Exception {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
         UnlockBatchRequestBody requestBody = UnlockBatchRequestBody.decode(request.getBody(), UnlockBatchRequestBody.class);
         Set<MessageQueue> mqSet = requestBody.getMqSet();
         if (mqSet.isEmpty()) {
+            // 空集合直接返回错误提示, 避免无效转发
             response.setBody(requestBody.encode());
             response.setRemark("MessageQueue set is empty");
             return response;

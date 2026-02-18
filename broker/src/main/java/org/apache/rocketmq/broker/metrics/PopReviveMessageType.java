@@ -16,7 +16,16 @@
  */
 package org.apache.rocketmq.broker.metrics;
 
+/**
+ * POP 回溯消息类型
+ */
 public enum PopReviveMessageType {
+    /**
+     * CheckPoint 消息
+     */
     CK,
+    /**
+     * Ack 消息
+     */
     ACK
 }

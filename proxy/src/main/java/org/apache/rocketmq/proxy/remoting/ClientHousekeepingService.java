@@ -21,37 +21,78 @@ import io.netty.channel.Channel;
 import org.apache.rocketmq.proxy.remoting.activity.ClientManagerActivity;
 import org.apache.rocketmq.remoting.ChannelEventListener;
 
+/**
+ * 客户端连接事件清理服务<br>
+ * 负责将连接关闭、异常、空闲等事件转发给客户端管理活动
+ */
 public class ClientHousekeepingService implements ChannelEventListener {
 
+    /**
+     * 客户端管理活动
+     */
     private final ClientManagerActivity clientManagerActivity;
 
+    /**
+     * 构造客户端连接事件清理服务
+     *
+     * @param clientManagerActivity 客户端管理活动
+     */
     public ClientHousekeepingService(ClientManagerActivity clientManagerActivity) {
         this.clientManagerActivity = clientManagerActivity;
     }
 
+    /**
+     * 处理连接建立事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel 连接通道
+     */
     @Override
     public void onChannelConnect(String remoteAddr, Channel channel) {
 
     }
 
+    /**
+     * 处理连接关闭事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel 连接通道
+     */
     @Override
     public void onChannelClose(String remoteAddr, Channel channel) {
         this.clientManagerActivity.doChannelCloseEvent(remoteAddr, channel);
     }
 
+    /**
+     * 处理连接异常事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel 连接通道
+     */
     @Override
     public void onChannelException(String remoteAddr, Channel channel) {
         this.clientManagerActivity.doChannelCloseEvent(remoteAddr, channel);
     }
 
+    /**
+     * 处理连接空闲事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel 连接通道
+     */
     @Override
     public void onChannelIdle(String remoteAddr, Channel channel) {
         this.clientManagerActivity.doChannelCloseEvent(remoteAddr, channel);
     }
 
+    /**
+     * 处理连接激活事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel 连接通道
+     */
     @Override
     public void onChannelActive(String remoteAddr, Channel channel) {
 
     }
 }
-

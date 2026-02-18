@@ -33,7 +33,18 @@ import org.apache.rocketmq.proxy.grpc.constant.AttributeKeys;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
+/**
+ * gRPC 头信息拦截器, 补齐远端地址, 本地地址与代理透传头
+ */
 public class HeaderInterceptor implements ServerInterceptor {
+    /**
+     * 解析并回填调用链路关键头信息
+     *
+     * @param call 当前 RPC 调用
+     * @param headers 当前调用头信息
+     * @param next 下一个调用处理器
+     * @return 继续处理后的监听器
+     */
     @Override
     public <R, W> ServerCall.Listener<R> interceptCall(
         ServerCall<R, W> call,
@@ -51,6 +62,7 @@ public class HeaderInterceptor implements ServerInterceptor {
         String localAddress = parseSocketAddress(localSocketAddress);
         GrpcUtils.putHeaderIfNotExist(headers, GrpcConstants.LOCAL_ADDRESS, localAddress);
 
+        // 透传 HAProxy 协议相关属性, 便于后续链路获取真实客户端信息
         for (Attributes.Key<?> key : call.getAttributes().keys()) {
             if (!StringUtils.startsWith(key.toString(), HAProxyConstants.PROXY_PROTOCOL_PREFIX)) {
                 continue;
@@ -69,6 +81,12 @@ public class HeaderInterceptor implements ServerInterceptor {
         return next.startCall(call, headers);
     }
 
+    /**
+     * 将 SocketAddress 转换为 host:port 字符串
+     *
+     * @param socketAddress 传输层地址对象
+     * @return 地址字符串, 解析失败时返回空字符串
+     */
     private String parseSocketAddress(SocketAddress socketAddress) {
         if (socketAddress instanceof InetSocketAddress) {
             InetSocketAddress inetSocketAddress = (InetSocketAddress) socketAddress;
@@ -82,6 +100,12 @@ public class HeaderInterceptor implements ServerInterceptor {
         return "";
     }
 
+    /**
+     * 从属性中读取 Proxy Protocol 地址与端口
+     *
+     * @param attributes gRPC 调用属性
+     * @return 真实客户端地址, 信息缺失时返回 null
+     */
     private String getProxyProtocolAddress(Attributes attributes) {
         String proxyProtocolAddr = attributes.get(AttributeKeys.PROXY_PROTOCOL_ADDR);
         String proxyProtocolPort = attributes.get(AttributeKeys.PROXY_PROTOCOL_PORT);

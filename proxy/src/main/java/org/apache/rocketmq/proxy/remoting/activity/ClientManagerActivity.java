@@ -43,10 +43,23 @@ import org.apache.rocketmq.remoting.protocol.heartbeat.ProducerData;
 
 import java.util.Set;
 
+/**
+ * 客户端管理请求处理活动
+ */
 public class ClientManagerActivity extends AbstractRemotingActivity {
 
+    /**
+     * Remoting 客户端通道管理器
+     */
     private final RemotingChannelManager remotingChannelManager;
 
+    /**
+     * 构造客户端管理活动处理器
+     *
+     * @param requestPipeline 请求处理管道
+     * @param messagingProcessor 消息处理核心组件
+     * @param manager Remoting 通道管理器
+     */
     public ClientManagerActivity(RequestPipeline requestPipeline, MessagingProcessor messagingProcessor,
         RemotingChannelManager manager) {
         super(requestPipeline, messagingProcessor);
@@ -54,11 +67,23 @@ public class ClientManagerActivity extends AbstractRemotingActivity {
         this.init();
     }
 
+    /**
+     * 初始化生产者与消费者变更监听器
+     */
     protected void init() {
         this.messagingProcessor.registerConsumerListener(new ConsumerIdsChangeListenerImpl());
         this.messagingProcessor.registerProducerListener(new ProducerChangeListenerImpl());
     }
 
+    /**
+     * 根据请求码分发客户端管理相关请求
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 请求处理结果
+     * @throws Exception 处理异常
+     */
     @Override
     protected RemotingCommand processRequest0(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws Exception {
@@ -75,6 +100,14 @@ public class ClientManagerActivity extends AbstractRemotingActivity {
         return null;
     }
 
+    /**
+     * 处理客户端心跳, 并注册生产者与消费者通道
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 心跳响应
+     */
     protected RemotingCommand heartBeat(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) {
         HeartbeatData heartbeatData = HeartbeatData.decode(request.getBody(), HeartbeatData.class);
@@ -105,6 +138,11 @@ public class ClientManagerActivity extends AbstractRemotingActivity {
         return response;
     }
 
+    /**
+     * 将客户端属性写入父通道属性
+     *
+     * @param clientChannelInfo 客户端通道信息
+     */
     private void setClientPropertiesToChannelAttr(final ClientChannelInfo clientChannelInfo) {
         Channel channel = clientChannelInfo.getChannel();
         if (channel instanceof RemotingChannel) {
@@ -117,6 +155,15 @@ public class ClientManagerActivity extends AbstractRemotingActivity {
 
     }
 
+    /**
+     * 处理客户端反注册请求
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 反注册响应
+     * @throws RemotingCommandException 请求头解析异常
+     */
     protected RemotingCommand unregisterClient(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) throws RemotingCommandException {
         final RemotingCommand response = RemotingCommand.createResponseCommand(UnregisterClientResponseHeader.class);
@@ -155,6 +202,14 @@ public class ClientManagerActivity extends AbstractRemotingActivity {
         return response;
     }
 
+    /**
+     * 处理客户端配置校验请求
+     *
+     * @param ctx Netty 上下文
+     * @param request 请求命令
+     * @param context Proxy 上下文
+     * @return 校验响应
+     */
     protected RemotingCommand checkClientConfig(ChannelHandlerContext ctx, RemotingCommand request,
         ProxyContext context) {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
@@ -163,6 +218,12 @@ public class ClientManagerActivity extends AbstractRemotingActivity {
         return response;
     }
 
+    /**
+     * 处理底层连接关闭事件
+     *
+     * @param remoteAddr 远端地址
+     * @param channel 底层通道
+     */
     public void doChannelCloseEvent(String remoteAddr, Channel channel) {
         Set<RemotingChannel> remotingChannelSet = this.remotingChannelManager.removeChannel(channel);
         for (RemotingChannel remotingChannel : remotingChannelSet) {
@@ -170,8 +231,18 @@ public class ClientManagerActivity extends AbstractRemotingActivity {
         }
     }
 
+    /**
+     * 消费者变更监听实现
+     */
     protected class ConsumerIdsChangeListenerImpl implements ConsumerIdsChangeListener {
 
+        /**
+         * 处理消费者组事件
+         *
+         * @param event 事件类型
+         * @param group 消费组
+         * @param args 扩展参数
+         */
         @Override
         public void handle(ConsumerGroupEvent event, String group, Object... args) {
             if (event == ConsumerGroupEvent.CLIENT_UNREGISTER) {
@@ -186,14 +257,27 @@ public class ClientManagerActivity extends AbstractRemotingActivity {
             }
         }
 
+        /**
+         * 关闭监听器
+         */
         @Override
         public void shutdown() {
 
         }
     }
 
+    /**
+     * 生产者变更监听实现
+     */
     protected class ProducerChangeListenerImpl implements ProducerChangeListener {
 
+        /**
+         * 处理生产者组事件
+         *
+         * @param event 事件类型
+         * @param group 生产组
+         * @param clientChannelInfo 客户端通道信息
+         */
         @Override
         public void handle(ProducerGroupEvent event, String group, ClientChannelInfo clientChannelInfo) {
             if (event == ProducerGroupEvent.CLIENT_UNREGISTER) {

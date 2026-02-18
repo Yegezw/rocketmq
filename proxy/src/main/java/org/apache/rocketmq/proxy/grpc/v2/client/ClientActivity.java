@@ -71,10 +71,23 @@ import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 
+/**
+ * gRPC 客户端活动实现, 负责心跳, 连接注册与遥测命令处理
+ */
 public class ClientActivity extends AbstractMessingActivity {
 
+    /**
+     * Proxy 模块日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PROXY_LOGGER_NAME);
 
+    /**
+     * 构造客户端活动对象
+     *
+     * @param messagingProcessor 消息处理器
+     * @param grpcClientSettingsManager gRPC 客户端设置管理器
+     * @param grpcChannelManager gRPC 通道管理器
+     */
     public ClientActivity(MessagingProcessor messagingProcessor,
         GrpcClientSettingsManager grpcClientSettingsManager,
         GrpcChannelManager grpcChannelManager) {
@@ -82,11 +95,21 @@ public class ClientActivity extends AbstractMessingActivity {
         this.init();
     }
 
+    /**
+     * 初始化客户端监听器
+     */
     protected void init() {
         this.messagingProcessor.registerConsumerListener(new ConsumerIdsChangeListenerImpl());
         this.messagingProcessor.registerProducerListener(new ProducerChangeListenerImpl());
     }
 
+    /**
+     * 处理客户端心跳并按客户端类型完成注册流程
+     *
+     * @param ctx Proxy 上下文
+     * @param request 心跳请求
+     * @return 心跳响应 Future
+     */
     public CompletableFuture<HeartbeatResponse> heartbeat(ProxyContext ctx, HeartbeatRequest request) {
         CompletableFuture<HeartbeatResponse> future = new CompletableFuture<>();
 
@@ -130,6 +153,13 @@ public class ClientActivity extends AbstractMessingActivity {
         return future;
     }
 
+    /**
+     * 处理客户端终止通知并执行反注册流程
+     *
+     * @param ctx Proxy 上下文
+     * @param request 客户端终止请求
+     * @return 终止响应 Future
+     */
     public CompletableFuture<NotifyClientTerminationResponse> notifyClientTermination(ProxyContext ctx,
         NotifyClientTerminationRequest request) {
         CompletableFuture<NotifyClientTerminationResponse> future = new CompletableFuture<>();
@@ -181,8 +211,20 @@ public class ClientActivity extends AbstractMessingActivity {
         return future;
     }
 
+    /**
+     * 创建遥测流处理器
+     *
+     * @param responseObserver 服务端响应观察者
+     * @return 带上下文的请求观察者
+     */
     public ContextStreamObserver<TelemetryCommand> telemetry(StreamObserver<TelemetryCommand> responseObserver) {
         return new ContextStreamObserver<TelemetryCommand>() {
+            /**
+             * 处理客户端上行遥测命令
+             *
+             * @param ctx Proxy 上下文
+             * @param request 遥测命令
+             */
             @Override
             public void onNext(ProxyContext ctx, TelemetryCommand request) {
                 try {
@@ -205,11 +247,19 @@ public class ClientActivity extends AbstractMessingActivity {
                 }
             }
 
+            /**
+             * 处理遥测流异常
+             *
+             * @param t 异常对象
+             */
             @Override
             public void onError(Throwable t) {
                 log.error("telemetry on error", t);
             }
 
+            /**
+             * 处理遥测流完成事件
+             */
             @Override
             public void onCompleted() {
                 responseObserver.onCompleted();
@@ -217,6 +267,13 @@ public class ClientActivity extends AbstractMessingActivity {
         };
     }
 
+    /**
+     * 处理遥测异常并转换为 gRPC 异常返回
+     *
+     * @param request 原始遥测请求
+     * @param t 异常对象
+     * @param responseObserver 服务端响应观察者
+     */
     protected void processTelemetryException(TelemetryCommand request, Throwable t,
         StreamObserver<TelemetryCommand> responseObserver) {
         StatusRuntimeException exception = io.grpc.Status.INTERNAL
@@ -239,6 +296,13 @@ public class ClientActivity extends AbstractMessingActivity {
         responseObserver.onError(exception);
     }
 
+    /**
+     * 处理客户端设置并写回设置确认命令
+     *
+     * @param ctx Proxy 上下文
+     * @param request 遥测设置请求
+     * @param responseObserver 服务端响应观察者
+     */
     protected void processAndWriteClientSettings(ProxyContext ctx, TelemetryCommand request,
         StreamObserver<TelemetryCommand> responseObserver) {
         GrpcClientChannel grpcClientChannel = null;
@@ -275,6 +339,13 @@ public class ClientActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 更新并返回客户端设置确认命令
+     *
+     * @param ctx Proxy 上下文
+     * @param request 遥测设置请求
+     * @return 设置确认命令
+     */
     protected TelemetryCommand processClientSettings(ProxyContext ctx, TelemetryCommand request) {
         String clientId = ctx.getClientID();
         grpcClientSettingsManager.updateClientSettings(ctx, clientId, request.getSettings());
@@ -285,12 +356,20 @@ public class ClientActivity extends AbstractMessingActivity {
             .build();
     }
 
+    /**
+     * 注册生产者客户端
+     *
+     * @param ctx Proxy 上下文
+     * @param topicName 主题名
+     * @return gRPC 客户端通道
+     */
     protected GrpcClientChannel registerProducer(ProxyContext ctx, String topicName) {
         String clientId = ctx.getClientID();
         LanguageCode languageCode = LanguageCode.valueOf(ctx.getLanguage());
 
         GrpcClientChannel channel = this.grpcChannelManager.createChannel(ctx, clientId);
         // use topic name as producer group
+        // 使用 topic 名作为 producer 组名
         ClientChannelInfo clientChannelInfo = new ClientChannelInfo(channel, clientId, languageCode, parseClientVersion(ctx.getClientVersion()));
         this.messagingProcessor.registerProducer(ctx, topicName, clientChannelInfo);
         TopicMessageType topicMessageType = this.messagingProcessor.getMetadataService().getTopicMessageType(ctx, topicName);
@@ -300,6 +379,16 @@ public class ClientActivity extends AbstractMessingActivity {
         return channel;
     }
 
+    /**
+     * 注册消费者客户端
+     *
+     * @param ctx Proxy 上下文
+     * @param consumerGroup 消费组
+     * @param clientType 客户端类型
+     * @param subscriptionEntryList 订阅条目列表
+     * @param updateSubscription 是否更新订阅
+     * @return gRPC 客户端通道
+     */
     protected GrpcClientChannel registerConsumer(ProxyContext ctx, String consumerGroup, ClientType clientType,
         List<SubscriptionEntry> subscriptionEntryList, boolean updateSubscription) {
         String clientId = ctx.getClientID();
@@ -321,6 +410,12 @@ public class ClientActivity extends AbstractMessingActivity {
         return channel;
     }
 
+    /**
+     * 解析客户端版本字符串为内部版本号
+     *
+     * @param clientVersionStr 客户端版本字符串
+     * @return 客户端版本号
+     */
     private int parseClientVersion(String clientVersionStr) {
         int clientVersion = MQVersion.CURRENT_VERSION;
         if (!StringUtils.isEmpty(clientVersionStr)) {
@@ -328,11 +423,19 @@ public class ClientActivity extends AbstractMessingActivity {
                 String tmp = StringUtils.upperCase(clientVersionStr);
                 clientVersion = MQVersion.Version.valueOf(tmp).ordinal();
             } catch (Exception ignored) {
+                // 无法解析时回退到默认版本
             }
         }
         return clientVersion;
     }
 
+    /**
+     * 回报线程栈结果并完成等待中的请求
+     *
+     * @param ctx Proxy 上下文
+     * @param status 结果状态
+     * @param request 线程栈请求结果
+     */
     protected void reportThreadStackTrace(ProxyContext ctx, Status status, ThreadStackTrace request) {
         String nonce = request.getNonce();
         String threadStack = request.getThreadStackTrace();
@@ -354,6 +457,13 @@ public class ClientActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 回报消息校验结果并完成等待中的请求
+     *
+     * @param ctx Proxy 上下文
+     * @param status 结果状态
+     * @param request 校验结果
+     */
     protected void reportVerifyMessageResult(ProxyContext ctx, Status status, VerifyMessageResult request) {
         String nonce = request.getNonce();
         CompletableFuture<ProxyRelayResult<ConsumeMessageDirectlyResult>> responseFuture = this.grpcChannelManager.getAndRemoveResponseFuture(nonce);
@@ -367,6 +477,13 @@ public class ClientActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 构建直接消费结果对象
+     *
+     * @param status gRPC 状态
+     * @param request 校验结果
+     * @return 直接消费结果
+     */
     protected ConsumeMessageDirectlyResult buildConsumeMessageDirectlyResult(Status status,
         VerifyMessageResult request) {
         ConsumeMessageDirectlyResult consumeMessageDirectlyResult = new ConsumeMessageDirectlyResult();
@@ -388,6 +505,12 @@ public class ClientActivity extends AbstractMessingActivity {
         return consumeMessageDirectlyResult;
     }
 
+    /**
+     * 根据客户端类型构建消费类型
+     *
+     * @param clientType 客户端类型
+     * @return 消费类型
+     */
     protected ConsumeType buildConsumeType(ClientType clientType) {
         switch (clientType) {
             case SIMPLE_CONSUMER:
@@ -399,6 +522,12 @@ public class ClientActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 构建订阅数据集合
+     *
+     * @param subscriptionEntryList 订阅条目列表
+     * @return 订阅数据集合
+     */
     protected Set<SubscriptionData> buildSubscriptionDataSet(List<SubscriptionEntry> subscriptionEntryList) {
         Set<SubscriptionData> subscriptionDataSet = new HashSet<>();
         for (SubscriptionEntry sub : subscriptionEntryList) {
@@ -409,6 +538,13 @@ public class ClientActivity extends AbstractMessingActivity {
         return subscriptionDataSet;
     }
 
+    /**
+     * 构建单条订阅数据
+     *
+     * @param topicName 主题名
+     * @param filterExpression 过滤表达式
+     * @return 订阅数据
+     */
     protected SubscriptionData buildSubscriptionData(String topicName, FilterExpression filterExpression) {
         String expression = filterExpression.getExpression();
         String expressionType = GrpcConverter.getInstance().buildExpressionType(filterExpression.getType());
@@ -419,8 +555,18 @@ public class ClientActivity extends AbstractMessingActivity {
         }
     }
 
+    /**
+     * 消费者变更监听器实现
+     */
     protected class ConsumerIdsChangeListenerImpl implements ConsumerIdsChangeListener {
 
+        /**
+         * 处理消费组事件
+         *
+         * @param event 消费组事件
+         * @param group 消费组
+         * @param args 扩展参数
+         */
         @Override
         public void handle(ConsumerGroupEvent event, String group, Object... args) {
             switch (event) {
@@ -435,6 +581,12 @@ public class ClientActivity extends AbstractMessingActivity {
             }
         }
 
+        /**
+         * 处理客户端反注册事件
+         *
+         * @param group 消费组
+         * @param args 扩展参数
+         */
         protected void processClientUnregister(String group, Object... args) {
             if (args == null || args.length < 1) {
                 return;
@@ -450,6 +602,12 @@ public class ClientActivity extends AbstractMessingActivity {
             }
         }
 
+        /**
+         * 处理客户端注册事件
+         *
+         * @param group 消费组
+         * @param args 扩展参数
+         */
         protected void processClientRegister(String group, Object... args) {
             if (args == null || args.length < 2) {
                 return;
@@ -459,6 +617,7 @@ public class ClientActivity extends AbstractMessingActivity {
                 Channel channel = clientChannelInfo.getChannel();
                 if (ChannelHelper.isRemote(channel)) {
                     // save settings from channel sync from other proxy
+                    // 保存从其他 proxy 同步过来的客户端设置
                     Settings settings = GrpcClientChannel.parseChannelExtendAttribute(channel);
                     log.debug("save client settings sync from other proxy. group:{}, channelInfo:{}, settings:{}", group, clientChannelInfo, settings);
                     if (settings == null) {
@@ -473,14 +632,27 @@ public class ClientActivity extends AbstractMessingActivity {
             }
         }
 
+        /**
+         * 关闭监听器
+         */
         @Override
         public void shutdown() {
 
         }
     }
 
+    /**
+     * 生产者变更监听器实现
+     */
     protected class ProducerChangeListenerImpl implements ProducerChangeListener {
 
+        /**
+         * 处理生产组事件
+         *
+         * @param event 生产组事件
+         * @param group 生产组
+         * @param clientChannelInfo 客户端通道信息
+         */
         @Override
         public void handle(ProducerGroupEvent event, String group, ClientChannelInfo clientChannelInfo) {
             if (event == ProducerGroupEvent.CLIENT_UNREGISTER) {

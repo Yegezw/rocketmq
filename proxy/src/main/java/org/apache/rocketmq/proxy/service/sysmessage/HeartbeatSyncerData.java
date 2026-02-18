@@ -25,23 +25,79 @@ import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.remoting.protocol.LanguageCode;
 
+/**
+ * 心跳同步消息数据模型
+ */
 public class HeartbeatSyncerData {
+    /**
+     * 心跳类型
+     */
     private HeartbeatType heartbeatType;
+    /**
+     * 客户端标识
+     */
     private String clientId;
+    /**
+     * 客户端语言
+     */
     private LanguageCode language;
+    /**
+     * 客户端协议版本
+     */
     private int version;
+    /**
+     * 最近更新时间戳
+     */
     private long lastUpdateTimestamp = System.currentTimeMillis();
+    /**
+     * 订阅数据集合
+     */
     private Set<SubscriptionData> subscriptionDataSet;
+    /**
+     * 消费者组
+     */
     private String group;
+    /**
+     * 消费类型
+     */
     private ConsumeType consumeType;
+    /**
+     * 消息模型
+     */
     private MessageModel messageModel;
+    /**
+     * 消费起始位置
+     */
     private ConsumeFromWhere consumeFromWhere;
+    /**
+     * 本地 Proxy 标识
+     */
     private String localProxyId;
+    /**
+     * 通道序列化数据
+     */
     private String channelData;
 
+    /**
+     * 默认构造方法
+     */
     public HeartbeatSyncerData() {
     }
 
+    /**
+     * 初始化心跳同步数据
+     *
+     * @param heartbeatType 心跳类型
+     * @param clientId 客户端标识
+     * @param language 客户端语言
+     * @param version 客户端协议版本
+     * @param group 消费者组
+     * @param consumeType 消费类型
+     * @param messageModel 消息模型
+     * @param consumeFromWhere 消费起始位置
+     * @param localProxyId 本地 Proxy 标识
+     * @param channelData 通道序列化数据
+     */
     public HeartbeatSyncerData(HeartbeatType heartbeatType, String clientId,
         LanguageCode language, int version, String group,
         ConsumeType consumeType, MessageModel messageModel,
@@ -156,6 +212,11 @@ public class HeartbeatSyncerData {
         this.channelData = channelData;
     }
 
+    /**
+     * 构造心跳同步数据字符串表示
+     *
+     * @return 字符串表示
+     */
     @Override
     public String toString() {
         return MoreObjects.toStringHelper(this)
