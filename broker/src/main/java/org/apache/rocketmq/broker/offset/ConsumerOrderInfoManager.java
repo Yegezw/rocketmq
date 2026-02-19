@@ -19,14 +19,6 @@ package org.apache.rocketmq.broker.offset;
 import com.alibaba.fastjson.annotation.JSONField;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import org.apache.rocketmq.broker.BrokerController;
 import org.apache.rocketmq.broker.BrokerPathConfigHelper;
 import org.apache.rocketmq.common.ConfigManager;
@@ -37,21 +29,53 @@ import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 import org.apache.rocketmq.remoting.protocol.header.ExtraInfoUtil;
 
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * POP 顺序消费状态管理器, 维护 topic@group 维度的 OrderInfo
+ */
 public class ConsumerOrderInfoManager extends ConfigManager {
 
+    /**
+     * broker 主日志记录器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
+    /**
+     * topic 与 group 的组合键分隔符
+     */
     private static final String TOPIC_GROUP_SEPARATOR = "@";
+    /**
+     * 自动清理阈值, 超过该时间未消费的顺序信息会被回收
+     */
     private static final long CLEAN_SPAN_FROM_LAST = 24 * 3600 * 1000;
 
-    private ConcurrentHashMap<String/* topic@group*/, ConcurrentHashMap<Integer/*queueId*/, OrderInfo>> table =
+    /**
+     * 顺序消费信息表, 键为 topic@group, 值为 queueId 到 OrderInfo 的映射
+     */
+    private ConcurrentHashMap<String/* topic@group, 主题与消费组组合键 */, ConcurrentHashMap<Integer/* queueId, 队列 ID */, OrderInfo>> table =
         new ConcurrentHashMap<>(128);
 
+    /**
+     * 锁释放通知管理器, 用于按可见时间唤醒长轮询
+     */
     private transient ConsumerOrderInfoLockManager consumerOrderInfoLockManager;
+    /**
+     * broker 控制器引用, 用于查询主题与订阅组元数据
+     */
     private transient BrokerController brokerController;
 
+    /**
+     * 默认构造, 主要供反序列化使用
+     */
     public ConsumerOrderInfoManager() {
     }
 
+    /**
+     * 使用 broker 控制器构建顺序消费信息管理器
+     *
+     * @param brokerController broker 控制器实例
+     */
     public ConsumerOrderInfoManager(BrokerController brokerController) {
         this.brokerController = brokerController;
         this.consumerOrderInfoLockManager = new ConsumerOrderInfoLockManager(brokerController);
@@ -65,14 +89,35 @@ public class ConsumerOrderInfoManager extends ConfigManager {
         this.table = table;
     }
 
+    /**
+     * 构建 topic@group 组合键
+     *
+     * @param topic 主题名
+     * @param group 消费组名
+     * @return topic@group 形式键
+     */
     protected static String buildKey(String topic, String group) {
         return topic + TOPIC_GROUP_SEPARATOR + group;
     }
 
+    /**
+     * 解析 topic@group 组合键
+     *
+     * @param key topic@group 键
+     * @return 下标 0 为 topic, 下标 1 为 group
+     */
     protected static String[] decodeKey(String key) {
         return key.split(TOPIC_GROUP_SEPARATOR);
     }
 
+    /**
+     * 根据 OrderInfo 更新队列锁释放时间
+     *
+     * @param topic 主题名
+     * @param group 消费组名
+     * @param queueId 队列 ID
+     * @param orderInfo 顺序消费状态
+     */
     private void updateLockFreeTimestamp(String topic, String group, int queueId, OrderInfo orderInfo) {
         if (consumerOrderInfoLockManager != null) {
             consumerOrderInfoLockManager.updateLockFreeTimestamp(topic, group, queueId, orderInfo);
@@ -81,7 +126,10 @@ public class ConsumerOrderInfoManager extends ConfigManager {
 
     /**
      * update the message list received
+     * <br>
+     * 更新本次 POP 返回消息的顺序消费状态
      *
+     * @param attemptId 本次拉取尝试 ID
      * @param isRetry is retry topic or not
      * @param topic topic
      * @param group group
@@ -94,10 +142,10 @@ public class ConsumerOrderInfoManager extends ConfigManager {
     public void update(String attemptId, boolean isRetry, String topic, String group, int queueId, long popTime, long invisibleTime,
         List<Long> msgQueueOffsetList, StringBuilder orderInfoBuilder) {
         String key = buildKey(topic, group);
-        ConcurrentHashMap<Integer/*queueId*/, OrderInfo> qs = table.get(key);
+        ConcurrentHashMap<Integer/* queueId, 队列 ID */, OrderInfo> qs = table.get(key);
         if (qs == null) {
             qs = new ConcurrentHashMap<>(16);
-            ConcurrentHashMap<Integer/*queueId*/, OrderInfo> old = table.putIfAbsent(key, qs);
+            ConcurrentHashMap<Integer/* queueId, 队列 ID */, OrderInfo> old = table.putIfAbsent(key, qs);
             if (old != null) {
                 qs = old;
             }
@@ -128,6 +176,8 @@ public class ConsumerOrderInfoManager extends ConfigManager {
             if (offsetConsumedCount.size() != orderInfo.offsetList.size()) {
                 // offsetConsumedCount only save messages which consumed count is greater than 0
                 // if size not equal, means there are some new messages
+                // offsetConsumedCount 只保存消费次数大于 0 的消息
+                // 尺寸不相等表示本次存在新的未消费消息
                 minConsumedTimes = 0;
             }
         } else {
@@ -136,16 +186,28 @@ public class ConsumerOrderInfoManager extends ConfigManager {
 
         // for compatibility
         // the old pop sdk use queueId to get consumedTimes from orderCountInfo
+        // 兼容旧版本 POP SDK, 仍按 queueId 回填最小消费次数
+        // 旧 POP SDK 会通过 queueId 从 orderCountInfo 读取 consumedTimes
         ExtraInfoUtil.buildQueueIdOrderCountInfo(orderInfoBuilder, topic, queueId, minConsumedTimes);
         updateLockFreeTimestamp(topic, group, queueId, orderInfo);
     }
 
+    /**
+     * 判断指定队列当前是否仍处于顺序阻塞状态
+     *
+     * @param attemptId 本次拉取尝试 ID
+     * @param topic 主题名
+     * @param group 消费组名
+     * @param queueId 队列 ID
+     * @param invisibleTime 不可见时长
+     * @return true 表示仍需阻塞后续拉取
+     */
     public boolean checkBlock(String attemptId, String topic, String group, int queueId, long invisibleTime) {
         String key = buildKey(topic, group);
-        ConcurrentHashMap<Integer/*queueId*/, OrderInfo> qs = table.get(key);
+        ConcurrentHashMap<Integer/* queueId, 队列 ID */, OrderInfo> qs = table.get(key);
         if (qs == null) {
             qs = new ConcurrentHashMap<>(16);
-            ConcurrentHashMap<Integer/*queueId*/, OrderInfo> old = table.putIfAbsent(key, qs);
+            ConcurrentHashMap<Integer/* queueId, 队列 ID */, OrderInfo> old = table.putIfAbsent(key, qs);
             if (old != null) {
                 qs = old;
             }
@@ -159,6 +221,13 @@ public class ConsumerOrderInfoManager extends ConfigManager {
         return orderInfo.needBlock(attemptId, invisibleTime);
     }
 
+    /**
+     * 清理指定队列的顺序阻塞信息
+     *
+     * @param topic 主题名
+     * @param group 消费组名
+     * @param queueId 队列 ID
+     */
     public void clearBlock(String topic, String group, int queueId) {
         table.computeIfPresent(buildKey(topic, group), (key, val) -> {
             val.remove(queueId);
@@ -168,16 +237,19 @@ public class ConsumerOrderInfoManager extends ConfigManager {
 
     /**
      * mark message is consumed finished. return the consumer offset
+     * <br>
+     * 标记消息已消费完成, 并计算下一次可提交的消费位点
      *
      * @param topic topic
      * @param group group
      * @param queueId queue id of message
      * @param queueOffset queue offset of message
+     * @param popTime 本次 POP 请求时间戳
      * @return -1 : illegal, -2 : no need commit, >= 0 : commit
      */
     public long commitAndNext(String topic, String group, int queueId, long queueOffset, long popTime) {
         String key = buildKey(topic, group);
-        ConcurrentHashMap<Integer/*queueId*/, OrderInfo> qs = table.get(key);
+        ConcurrentHashMap<Integer/* queueId, 队列 ID */, OrderInfo> qs = table.get(key);
 
         if (qs == null) {
             return queueOffset + 1;
@@ -213,11 +285,13 @@ public class ConsumerOrderInfoManager extends ConfigManager {
             }
         }
         // not found
+        // 未找到对应位点, 说明提交请求非法
         if (i >= size) {
             log.warn("OrderInfo not found commit offset, {}, {}, {}", key, queueOffset, orderInfo);
             return -1;
         }
         //set bit
+        // 将命中位点标记为已确认
         orderInfo.setCommitOffsetBit(orderInfo.commitOffsetBit | (1L << i));
         long nextOffset = orderInfo.getNextOffset();
 
@@ -227,16 +301,19 @@ public class ConsumerOrderInfoManager extends ConfigManager {
 
     /**
      * update next visible time of this message
+     * <br>
+     * 更新指定消息的下一次可见时间, 以延后顺序队列解锁
      *
      * @param topic topic
      * @param group group
      * @param queueId queue id of message
      * @param queueOffset queue offset of message
+     * @param popTime 本次 POP 请求时间戳
      * @param nextVisibleTime nex visible time
      */
     public void updateNextVisibleTime(String topic, String group, int queueId, long queueOffset, long popTime, long nextVisibleTime) {
         String key = buildKey(topic, group);
-        ConcurrentHashMap<Integer/*queueId*/, OrderInfo> qs = table.get(key);
+        ConcurrentHashMap<Integer/* queueId, 队列 ID */, OrderInfo> qs = table.get(key);
 
         if (qs == null) {
             log.warn("orderInfo of queueId is null. key: {}, queueOffset: {}, queueId: {}", key, queueOffset, queueId);
@@ -256,17 +333,20 @@ public class ConsumerOrderInfoManager extends ConfigManager {
         updateLockFreeTimestamp(topic, group, queueId, orderInfo);
     }
 
+    /**
+     * 自动清理无效顺序消费数据, 包含主题删除, 订阅组删除, 队列越界与长期不消费场景
+     */
     protected void autoClean() {
         if (brokerController == null) {
             return;
         }
-        Iterator<Map.Entry<String/* topic@group*/, ConcurrentHashMap<Integer/*queueId*/, OrderInfo>>> iterator =
+        Iterator<Map.Entry<String/* topic@group, 主题与消费组组合键 */, ConcurrentHashMap<Integer/* queueId, 队列 ID */, OrderInfo>>> iterator =
             this.table.entrySet().iterator();
         while (iterator.hasNext()) {
-            Map.Entry<String/* topic@group*/, ConcurrentHashMap<Integer/*queueId*/, OrderInfo>> entry =
+            Map.Entry<String/* topic@group, 主题与消费组组合键 */, ConcurrentHashMap<Integer/* queueId, 队列 ID */, OrderInfo>> entry =
                 iterator.next();
             String topicAtGroup = entry.getKey();
-            ConcurrentHashMap<Integer/*queueId*/, OrderInfo> qs = entry.getValue();
+            ConcurrentHashMap<Integer/* queueId, 队列 ID */, OrderInfo> qs = entry.getValue();
             String[] arrays = decodeKey(topicAtGroup);
             if (arrays.length != 2) {
                 continue;
@@ -293,9 +373,9 @@ public class ConsumerOrderInfoManager extends ConfigManager {
                 continue;
             }
 
-            Iterator<Map.Entry<Integer/*queueId*/, OrderInfo>> qsIterator = qs.entrySet().iterator();
+            Iterator<Map.Entry<Integer/* queueId, 队列 ID */, OrderInfo>> qsIterator = qs.entrySet().iterator();
             while (qsIterator.hasNext()) {
-                Map.Entry<Integer/*queueId*/, OrderInfo> qsEntry = qsIterator.next();
+                Map.Entry<Integer/* queueId, 队列 ID */, OrderInfo> qsEntry = qsIterator.next();
 
                 if (qsEntry.getKey() >= topicConfig.getReadQueueNums()) {
                     qsIterator.remove();
@@ -311,11 +391,21 @@ public class ConsumerOrderInfoManager extends ConfigManager {
         }
     }
 
+    /**
+     * 序列化顺序消费信息
+     *
+     * @return JSON 字符串
+     */
     @Override
     public String encode() {
         return this.encode(false);
     }
 
+    /**
+     * 返回顺序消费信息配置文件路径
+     *
+     * @return 配置文件绝对路径
+     */
     @Override
     public String configFilePath() {
         if (brokerController != null) {
@@ -325,6 +415,11 @@ public class ConsumerOrderInfoManager extends ConfigManager {
         }
     }
 
+    /**
+     * 反序列化并恢复顺序消费信息, 同步恢复锁释放通知任务
+     *
+     * @param jsonString 顺序消费信息 JSON 字符串
+     */
     @Override
     public void decode(String jsonString) {
         if (jsonString != null) {
@@ -338,12 +433,21 @@ public class ConsumerOrderInfoManager extends ConfigManager {
         }
     }
 
+    /**
+     * 按指定格式序列化顺序消费信息, 编码前先执行自动清理
+     *
+     * @param prettyFormat 是否格式化输出
+     * @return JSON 字符串
+     */
     @Override
     public String encode(boolean prettyFormat) {
         this.autoClean();
         return RemotingSerializable.toJson(this, prettyFormat);
     }
 
+    /**
+     * 关闭顺序消费锁通知管理器
+     */
     public void shutdown() {
         if (this.consumerOrderInfoLockManager != null) {
             this.consumerOrderInfoLockManager.shutdown();
@@ -355,48 +459,81 @@ public class ConsumerOrderInfoManager extends ConfigManager {
         return consumerOrderInfoLockManager;
     }
 
+    /**
+     * 单队列顺序消费状态快照
+     */
     public static class OrderInfo {
+        /**
+         * 本批消息的 POP 时间戳
+         */
         private long popTime;
         /**
          * the invisibleTime when pop message
+         * <br>
+         * POP 时设置的不可见时长
          */
         @JSONField(name = "i")
         private Long invisibleTime;
         /**
-         * offset
-         * offsetList[0] is the queue offset of message
-         * offsetList[i] (i > 0) is the distance between current message and offsetList[0]
+         * offset<br>
+         * offsetList[0] is the queue offset of message<br>
+         * offsetList[i] (i > 0) is the distance between current message and offsetList[0]<br>
+         * 压缩后的位点列表<br>
+         * offsetList[0] 保存首条消息的真实队列位点<br>
+         * i > 0 时保存相对首条消息的距离
          */
         @JSONField(name = "o")
         private List<Long> offsetList;
         /**
-         * next visible timestamp for message
+         * next visible timestamp for message<br>
          * key: message queue offset
+         * 每条消息的下一次可见时间<br>
+         * key 为消息真实队列位点
          */
         @JSONField(name = "ot")
         private Map<Long, Long> offsetNextVisibleTime;
         /**
-         * message consumed count for offset
-         * key: message queue offset
+         * message consumed count for offset<br>
+         * key: message queue offset<br>
+         * 每条消息累计消费次数<br>
+         * key 为消息真实队列位点
          */
         @JSONField(name = "oc")
         private Map<Long, Integer> offsetConsumedCount;
         /**
-         * last consume timestamp
+         * last consume timestamp<br>
+         * 最近一次消费时间戳
          */
         @JSONField(name = "l")
         private long lastConsumeTimestamp;
         /**
-         * commit offset bit
+         * commit offset bit<br>
+         * 已确认位点位图, 第 i 位表示 offsetList 第 i 个元素是否已确认
          */
         @JSONField(name = "cm")
         private long commitOffsetBit;
+        /**
+         * 当前顺序消费状态对应的尝试 ID
+         */
         @JSONField(name = "a")
         private String attemptId;
 
+        /**
+         * 默认构造, 主要供反序列化使用
+         */
         public OrderInfo() {
         }
 
+        /**
+         * 构建顺序消费状态快照
+         *
+         * @param attemptId 本次拉取尝试 ID
+         * @param popTime POP 时间戳
+         * @param invisibleTime 不可见时长
+         * @param queueOffsetList 原始队列位点列表
+         * @param lastConsumeTimestamp 最近消费时间戳
+         * @param commitOffsetBit 已确认位图
+         */
         public OrderInfo(String attemptId, long popTime, long invisibleTime, List<Long> queueOffsetList, long lastConsumeTimestamp,
             long commitOffsetBit) {
             this.popTime = popTime;
@@ -471,6 +608,12 @@ public class ConsumerOrderInfoManager extends ConfigManager {
             this.attemptId = attemptId;
         }
 
+        /**
+         * 将原始队列位点压缩为首位点加差值列表, 降低序列化体积
+         *
+         * @param queueOffsetList 原始队列位点列表
+         * @return 压缩后的位点列表
+         */
         public static List<Long> buildOffsetList(List<Long> queueOffsetList) {
             List<Long> simple = new ArrayList<>();
             if (queueOffsetList.size() == 1) {
@@ -485,6 +628,13 @@ public class ConsumerOrderInfoManager extends ConfigManager {
             return simple;
         }
 
+        /**
+         * 判断当前队列是否仍需阻塞, 仅有未确认且未到可见时间的消息时返回 true
+         *
+         * @param attemptId            本次拉取尝试 ID
+         * @param currentInvisibleTime 当前请求不可见时长
+         * @return true 表示仍需阻塞
+         */
         @JSONField(serialize = false, deserialize = false)
         public boolean needBlock(String attemptId, long currentInvisibleTime) {
             if (offsetList == null || offsetList.isEmpty()) {
@@ -544,6 +694,12 @@ public class ConsumerOrderInfoManager extends ConfigManager {
             return currentTime;
         }
 
+        /**
+         * 更新单条消息下一次可见时间
+         *
+         * @param queueOffset 消息真实队列位点
+         * @param nextVisibleTime 下一次可见时间戳
+         */
         @JSONField(serialize = false, deserialize = false)
         public void updateOffsetNextVisibleTime(long queueOffset, long nextVisibleTime) {
             if (this.offsetNextVisibleTime == null) {
@@ -566,6 +722,7 @@ public class ConsumerOrderInfoManager extends ConfigManager {
             }
             if (i == num) {
                 // all ack
+                // 全部消息已确认, 下一位点为最后一条消息位点加 1
                 return getQueueOffset(num - 1) + 1;
             }
             return getQueueOffset(i);
@@ -573,9 +730,11 @@ public class ConsumerOrderInfoManager extends ConfigManager {
 
         /**
          * convert the offset at the index of offsetList to queue offset
+         * <br>
+         * 将 offsetList 指定下标转换为真实队列位点
          *
          * @param offsetIndex the index of offsetList
-         * @return queue offset of message
+         * @return queue offset of message 返回消息真实队列位点
          */
         @JSONField(serialize = false, deserialize = false)
         public long getQueueOffset(int offsetIndex) {
@@ -596,7 +755,11 @@ public class ConsumerOrderInfoManager extends ConfigManager {
 
         /**
          * calculate message consumed count of each message, and put nonzero value into offsetConsumedCount
+         * <br>
+         * 计算每条消息消费次数, 并仅记录非零值到 offsetConsumedCount
          *
+         * @param preAttemptId            上一轮拉取尝试 ID
+         * @param preOffsetList           上一轮压缩位点列表
          * @param prevOffsetConsumedCount the offset list of message
          */
         @JSONField(serialize = false, deserialize = false)
@@ -627,6 +790,11 @@ public class ConsumerOrderInfoManager extends ConfigManager {
             this.offsetConsumedCount = offsetConsumedCount;
         }
 
+        /**
+         * 输出顺序消费状态, 便于日志排障
+         *
+         * @return 状态字符串
+         */
         @Override
         public String toString() {
             return MoreObjects.toStringHelper(this)

@@ -16,7 +16,19 @@
  */
 package org.apache.rocketmq.store.config;
 
+/**
+ * CommitLog 刷盘模式枚举<br>
+ * 用于控制写入请求与磁盘持久化确认关系
+ */
 public enum FlushDiskType {
+    /**
+     * 同步刷盘<br>
+     * 写入请求需要等待刷盘完成后再返回
+     */
     SYNC_FLUSH,
+    /**
+     * 异步刷盘<br>
+     * 写入请求先返回, 刷盘由后台线程异步完成
+     */
     ASYNC_FLUSH
 }

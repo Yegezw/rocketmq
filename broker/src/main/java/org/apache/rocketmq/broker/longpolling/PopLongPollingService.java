@@ -46,23 +46,57 @@ import static org.apache.rocketmq.broker.longpolling.PollingResult.POLLING_FULL;
 import static org.apache.rocketmq.broker.longpolling.PollingResult.POLLING_SUC;
 import static org.apache.rocketmq.broker.longpolling.PollingResult.POLLING_TIMEOUT;
 
+/**
+ * POP 长轮询核心服务, 负责请求挂起, 过滤命中唤醒, 超时回收与资源清理
+ */
 public class PopLongPollingService extends ServiceThread {
 
+    /**
+     * POP 长轮询专用日志器
+     */
     private static final Logger POP_LOGGER =
         LoggerFactory.getLogger(LoggerName.ROCKETMQ_POP_LOGGER_NAME);
+    /**
+     * broker 控制器, 提供配置, 存储与执行线程池访问能力
+     */
     private final BrokerController brokerController;
+    /**
+     * 请求处理器, 在请求被唤醒时继续执行业务逻辑
+     */
     private final NettyRequestProcessor processor;
+    /**
+     * topic 到消费组集合的索引表, 用于消息到达时快速定位待通知消费组
+     */
     private final ConcurrentLinkedHashMap<String, ConcurrentHashMap<String, Byte>> topicCidMap;
+    /**
+     * 长轮询请求主存储, 键为 topic + cid + queueId
+     */
     private final ConcurrentLinkedHashMap<String, ConcurrentSkipListSet<PopRequest>> pollingMap;
+    /**
+     * 最近一次清理无效资源的时间戳
+     */
     private long lastCleanTime = 0;
 
+    /**
+     * 当前挂起请求总量统计, 用于全局限流与监控
+     */
     private final AtomicLong totalPollingNum = new AtomicLong(0);
+    /**
+     * 请求出队策略开关, true 表示优先唤醒最新请求
+     */
     private final boolean notifyLast;
 
+    /**
+     * 创建 POP 长轮询服务
+     *
+     * @param brokerController broker 控制器
+     * @param processor 被唤醒请求的处理器
+     * @param notifyLast 是否优先唤醒最新请求
+     */
     public PopLongPollingService(BrokerController brokerController, NettyRequestProcessor processor, boolean notifyLast) {
         this.brokerController = brokerController;
         this.processor = processor;
-        // 100000 topic default,  100000 lru topic + cid + qid
+        // 100000 topic default, 100000 lru topic + cid + qid, 默认容量按主题数与轮询键数分层配置
         this.topicCidMap = new ConcurrentLinkedHashMap.Builder<String, ConcurrentHashMap<String, Byte>>()
             .maximumWeightedCapacity(this.brokerController.getBrokerConfig().getPopPollingMapSize() * 2L).build();
         this.pollingMap = new ConcurrentLinkedHashMap.Builder<String, ConcurrentSkipListSet<PopRequest>>()
@@ -78,6 +112,9 @@ public class PopLongPollingService extends ServiceThread {
         return PopLongPollingService.class.getSimpleName();
     }
 
+    /**
+     * 扫描挂起请求并处理超时唤醒, 周期性输出统计并清理无效资源
+     */
     @Override
     public void run() {
         int i = 0;
@@ -132,7 +169,7 @@ public class PopLongPollingService extends ServiceThread {
                     i = 0;
                 }
 
-                // clean unused
+                // clean unused, 清理无效 topic 与订阅组对应的缓存项
                 if (lastCleanTime == 0 || System.currentTimeMillis() - lastCleanTime > 5 * 60 * 1000) {
                     cleanUnusedResource();
                 }
@@ -140,7 +177,7 @@ public class PopLongPollingService extends ServiceThread {
                 POP_LOGGER.error("checkPolling error", e);
             }
         }
-        // clean all;
+        // clean all, 服务退出前主动唤醒剩余请求
         try {
             for (Map.Entry<String, ConcurrentSkipListSet<PopRequest>> entry : pollingMap.entrySet()) {
                 ConcurrentSkipListSet<PopRequest> popQ = entry.getValue();
@@ -153,10 +190,27 @@ public class PopLongPollingService extends ServiceThread {
         }
     }
 
+    /**
+     * 对外暴露简化消息到达通知接口, 默认不提供过滤上下文
+     *
+     * @param topic 到达消息主题
+     * @param queueId 到达消息队列编号
+     */
     public void notifyMessageArrivingWithRetryTopic(final String topic, final int queueId) {
         this.notifyMessageArrivingWithRetryTopic(topic, queueId, -1L, null, 0L, null, null);
     }
 
+    /**
+     * 处理重试主题到普通主题的映射, 随后触发轮询唤醒流程
+     *
+     * @param topic 到达消息主题, 可能是重试主题
+     * @param queueId 队列编号
+     * @param offset 消费队列偏移量
+     * @param tagsCode 标签码
+     * @param msgStoreTime 存储时间戳
+     * @param filterBitMap 过滤位图
+     * @param properties 消息属性
+     */
     public void notifyMessageArrivingWithRetryTopic(final String topic, final int queueId, long offset,
         Long tagsCode, long msgStoreTime, byte[] filterBitMap, Map<String, String> properties) {
         String notifyTopic;
@@ -168,6 +222,17 @@ public class PopLongPollingService extends ServiceThread {
         notifyMessageArriving(notifyTopic, queueId, offset, tagsCode, msgStoreTime, filterBitMap, properties);
     }
 
+    /**
+     * 按 topic 广播到该主题下全部消费组键, 并尝试唤醒队列级与全队列级请求
+     *
+     * @param topic 到达消息主题
+     * @param queueId 队列编号
+     * @param offset 当前偏移量
+     * @param tagsCode 标签码
+     * @param msgStoreTime 存储时间戳
+     * @param filterBitMap 过滤位图
+     * @param properties 消息属性
+     */
     public void notifyMessageArriving(final String topic, final int queueId, long offset,
         Long tagsCode, long msgStoreTime, byte[] filterBitMap, Map<String, String> properties) {
         ConcurrentHashMap<String, Byte> cids = topicCidMap.get(topic);
@@ -184,16 +249,55 @@ public class PopLongPollingService extends ServiceThread {
         }
     }
 
+    /**
+     * 使用默认非强制策略唤醒指定消费组的轮询请求
+     *
+     * @param topic 主题名
+     * @param queueId 队列编号
+     * @param cid 消费组名
+     * @param tagsCode 标签码
+     * @param msgStoreTime 存储时间戳
+     * @param filterBitMap 过滤位图
+     * @param properties 消息属性
+     * @return true 表示至少唤醒一个请求
+     */
     public boolean notifyMessageArriving(final String topic, final int queueId, final String cid,
         Long tagsCode, long msgStoreTime, byte[] filterBitMap, Map<String, String> properties) {
         return notifyMessageArriving(topic, queueId, cid, false, tagsCode, msgStoreTime, filterBitMap, properties, null);
     }
 
+    /**
+     * 允许指定强制唤醒标志, 在需要跳过过滤判断时直接释放请求
+     *
+     * @param topic 主题名
+     * @param queueId 队列编号
+     * @param cid 消费组名
+     * @param force 是否强制唤醒
+     * @param tagsCode 标签码
+     * @param msgStoreTime 存储时间戳
+     * @param filterBitMap 过滤位图
+     * @param properties 消息属性
+     * @return true 表示至少唤醒一个请求
+     */
     public boolean notifyMessageArriving(final String topic, final int queueId, final String cid, boolean force,
         Long tagsCode, long msgStoreTime, byte[] filterBitMap, Map<String, String> properties) {
         return notifyMessageArriving(topic, queueId, cid, force, tagsCode, msgStoreTime, filterBitMap, properties, null);
     }
 
+    /**
+     * 执行单个轮询键的唤醒判断, 过滤失败时将请求重新放回等待队列
+     *
+     * @param topic 主题名
+     * @param queueId 队列编号
+     * @param cid 消费组名
+     * @param force 是否强制唤醒
+     * @param tagsCode 标签码
+     * @param msgStoreTime 存储时间戳
+     * @param filterBitMap 过滤位图
+     * @param properties 消息属性
+     * @param callback 可选回调, 在请求被唤醒时附加执行
+     * @return true 表示请求成功唤醒
+     */
     public boolean notifyMessageArriving(final String topic, final int queueId, final String cid, boolean force,
         Long tagsCode, long msgStoreTime, byte[] filterBitMap, Map<String, String> properties, CommandCallback callback) {
         ConcurrentSkipListSet<PopRequest> remotingCommands = pollingMap.get(KeyBuilder.buildPollingKey(topic, cid, queueId));
@@ -226,10 +330,23 @@ public class PopLongPollingService extends ServiceThread {
         return wakeUp(popRequest, callback);
     }
 
+    /**
+     * 使用默认无回调方式唤醒请求
+     *
+     * @param request 待唤醒请求
+     * @return true 表示唤醒流程已提交
+     */
     public boolean wakeUp(final PopRequest request) {
         return wakeUp(request, null);
     }
 
+    /**
+     * 将挂起请求提交到 Pull 执行线程池处理, 并可附加回调逻辑
+     *
+     * @param request 待唤醒请求
+     * @param callback 可选附加回调
+     * @return true 表示请求可执行且已提交
+     */
     public boolean wakeUp(final PopRequest request, CommandCallback callback) {
         if (request == null || !request.complete()) {
             return false;
@@ -271,16 +388,28 @@ public class PopLongPollingService extends ServiceThread {
     }
 
     /**
-     * @param ctx
-     * @param remotingCommand
-     * @param requestHeader
-     * @return
+     * 将请求加入长轮询队列, 不附带订阅过滤上下文
+     *
+     * @param ctx 网络上下文
+     * @param remotingCommand 原始请求命令
+     * @param requestHeader 轮询头信息
+     * @return 长轮询入队结果
      */
     public PollingResult polling(final ChannelHandlerContext ctx, RemotingCommand remotingCommand,
         final PollingHeader requestHeader) {
         return this.polling(ctx, remotingCommand, requestHeader, null, null);
     }
 
+    /**
+     * 将请求加入长轮询队列并记录过滤信息, 后续由消息到达事件触发唤醒
+     *
+     * @param ctx 网络上下文
+     * @param remotingCommand 原始请求命令
+     * @param requestHeader 轮询头信息
+     * @param subscriptionData 订阅数据
+     * @param messageFilter 消息过滤器
+     * @return 长轮询入队结果
+     */
     public PollingResult polling(final ChannelHandlerContext ctx, RemotingCommand remotingCommand,
         final PollingHeader requestHeader, SubscriptionData subscriptionData, MessageFilter messageFilter) {
         if (requestHeader.getPollTime() <= 0 || this.isStopped()) {
@@ -319,7 +448,7 @@ public class PopLongPollingService extends ServiceThread {
                 queue = old;
             }
         } else {
-            // check size
+            // check size, 检查单键挂起队列大小是否超过上限
             int size = queue.size();
             if (size > brokerController.getBrokerConfig().getPopPollingSize()) {
                 POP_LOGGER.info("polling {}, result POLLING_FULL, singleSize:{}", remotingCommand, size);
@@ -343,6 +472,9 @@ public class PopLongPollingService extends ServiceThread {
         return pollingMap;
     }
 
+    /**
+     * 清理已删除 topic 或订阅组关联的缓存键, 防止轮询映射长期膨胀
+     */
     private void cleanUnusedResource() {
         try {
             {
@@ -398,6 +530,12 @@ public class PopLongPollingService extends ServiceThread {
         lastCleanTime = System.currentTimeMillis();
     }
 
+    /**
+     * 按配置从队列头或尾选择可用请求, 并跳过连接失效请求
+     *
+     * @param remotingCommands 目标轮询队列
+     * @return 可用请求, 若不存在则返回 null
+     */
     private PopRequest pollRemotingCommands(ConcurrentSkipListSet<PopRequest> remotingCommands) {
         if (remotingCommands == null || remotingCommands.isEmpty()) {
             return null;

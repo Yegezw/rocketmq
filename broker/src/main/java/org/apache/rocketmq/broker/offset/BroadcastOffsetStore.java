@@ -24,8 +24,18 @@ import org.apache.rocketmq.common.MixAll;
 
 public class BroadcastOffsetStore {
 
+    /**
+     * 按队列维度保存广播消费位点, 仅在 broker 内存中维护
+     */
     private final ConcurrentMap<Integer, AtomicLong> offsetTable = new ConcurrentHashMap<>();
 
+    /**
+     * 更新指定队列的广播消费位点, 可按需限制为仅递增更新
+     *
+     * @param queueId 消费队列标识
+     * @param offset 待写入的消费位点
+     * @param increaseOnly 为 true 时仅允许位点前移
+     */
     public void updateOffset(int queueId, long offset, boolean increaseOnly) {
         AtomicLong offsetOld = this.offsetTable.get(queueId);
         if (null == offsetOld) {
@@ -41,6 +51,12 @@ public class BroadcastOffsetStore {
         }
     }
 
+    /**
+     * 读取指定队列的广播消费位点, 不存在时返回 -1
+     *
+     * @param queueId 消费队列标识
+     * @return 当前记录的消费位点, 未命中返回 -1
+     */
     public long readOffset(int queueId) {
         AtomicLong offset = this.offsetTable.get(queueId);
         if (offset != null) {
@@ -49,6 +65,11 @@ public class BroadcastOffsetStore {
         return -1L;
     }
 
+    /**
+     * 返回当前存在位点记录的队列集合
+     *
+     * @return 已记录位点的队列 ID 集合
+     */
     public Set<Integer> queueList() {
         return offsetTable.keySet();
     }

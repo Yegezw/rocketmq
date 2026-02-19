@@ -30,18 +30,48 @@ import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.store.ConsumeQueueExt;
 import org.apache.rocketmq.store.exception.ConsumeQueueException;
 
+/**
+ * Pull 长轮询挂起服务, 负责缓存请求并在消息到达或超时后唤醒
+ */
 public class PullRequestHoldService extends ServiceThread {
+    /**
+     * Pull 挂起服务日志器
+     */
     private static final Logger log = LoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
+    /**
+     * 主题与队列键分隔符
+     */
     protected static final String TOPIC_QUEUEID_SEPARATOR = "@";
+    /**
+     * broker 主控制器, 用于访问存储与请求处理组件
+     */
     protected final BrokerController brokerController;
+    /**
+     * 轻量系统时钟, 降低高频时间调用开销
+     */
     private final SystemClock systemClock = new SystemClock();
-    protected ConcurrentMap<String/* topic@queueId */, ManyPullRequest> pullRequestTable =
+    /**
+     * 挂起请求表, 键为 topic@queueId
+     */
+    protected ConcurrentMap<String/* topic@queueId, 主题与队列编号组合键 */, ManyPullRequest> pullRequestTable =
         new ConcurrentHashMap<>(1024);
 
+    /**
+     * 创建 Pull 挂起服务
+     *
+     * @param brokerController broker 控制器
+     */
     public PullRequestHoldService(final BrokerController brokerController) {
         this.brokerController = brokerController;
     }
 
+    /**
+     * 将 pull 请求挂起到指定 topic 队列下, 等待消息到达或超时再执行
+     *
+     * @param topic 主题名
+     * @param queueId 队列编号
+     * @param pullRequest 待挂起请求
+     */
     public void suspendPullRequest(final String topic, final int queueId, final PullRequest pullRequest) {
         String key = this.buildKey(topic, queueId);
         ManyPullRequest mpr = this.pullRequestTable.get(key);
@@ -57,6 +87,13 @@ public class PullRequestHoldService extends ServiceThread {
         mpr.addPullRequest(pullRequest);
     }
 
+    /**
+     * 构建挂起请求映射键
+     *
+     * @param topic 主题名
+     * @param queueId 队列编号
+     * @return topic 与 queueId 拼接后的唯一键
+     */
     private String buildKey(final String topic, final int queueId) {
         StringBuilder sb = new StringBuilder(topic.length() + 5);
         sb.append(topic);
@@ -65,6 +102,9 @@ public class PullRequestHoldService extends ServiceThread {
         return sb.toString();
     }
 
+    /**
+     * 周期性检查挂起请求, 根据长轮询或短轮询配置选择扫描间隔
+     */
     @Override
     public void run() {
         log.info("{} service started", this.getServiceName());
@@ -98,6 +138,9 @@ public class PullRequestHoldService extends ServiceThread {
         return PullRequestHoldService.class.getSimpleName();
     }
 
+    /**
+     * 扫描全部挂起键并以当前最大偏移量触发唤醒判断
+     */
     protected void checkHoldRequest() {
         for (String key : this.pullRequestTable.keySet()) {
             String[] kArray = key.split(TOPIC_QUEUEID_SEPARATOR);
@@ -116,10 +159,28 @@ public class PullRequestHoldService extends ServiceThread {
         }
     }
 
+    /**
+     * 使用最大偏移量触发消息到达通知
+     *
+     * @param topic 主题名
+     * @param queueId 队列编号
+     * @param maxOffset 当前最大偏移量
+     */
     public void notifyMessageArriving(final String topic, final int queueId, final long maxOffset) {
         notifyMessageArriving(topic, queueId, maxOffset, null, 0, null, null);
     }
 
+    /**
+     * 按过滤规则唤醒符合条件的挂起请求, 并将未命中请求重新入队
+     *
+     * @param topic 主题名
+     * @param queueId 队列编号
+     * @param maxOffset 当前最大偏移量
+     * @param tagsCode 标签码
+     * @param msgStoreTime 消息存储时间
+     * @param filterBitMap 过滤位图
+     * @param properties 消息属性
+     */
     public void notifyMessageArriving(final String topic, final int queueId, final long maxOffset, final Long tagsCode,
         long msgStoreTime, byte[] filterBitMap, Map<String, String> properties) {
         String key = this.buildKey(topic, queueId);
@@ -143,7 +204,7 @@ public class PullRequestHoldService extends ServiceThread {
                     if (newestOffset > request.getPullFromThisOffset()) {
                         boolean match = request.getMessageFilter().isMatchedByConsumeQueue(tagsCode,
                             new ConsumeQueueExt.CqExtUnit(tagsCode, msgStoreTime, filterBitMap));
-                        // match by bit map, need eval again when properties is not null.
+                        // match by bit map, need eval again when properties is not null, 先按位图匹配, 存在属性时再做二次判定
                         if (match && properties != null) {
                             match = request.getMessageFilter().isMatchedByCommitLog(null, properties);
                         }
@@ -183,6 +244,9 @@ public class PullRequestHoldService extends ServiceThread {
         }
     }
 
+    /**
+     * 主从切换为 master 后主动唤醒全部挂起请求, 避免消费者长时间等待
+     */
     public void notifyMasterOnline() {
         for (ManyPullRequest mpr : this.pullRequestTable.values()) {
             if (mpr == null || mpr.isEmpty()) {

@@ -23,61 +23,13 @@ import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.sdk.metrics.InstrumentSelector;
 import io.opentelemetry.sdk.metrics.ViewBuilder;
-import java.io.File;
-import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.net.Inet6Address;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileLock;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.validator.routines.InetAddressValidator;
-import org.apache.rocketmq.common.AbstractBrokerRunnable;
-import org.apache.rocketmq.common.BoundaryType;
-import org.apache.rocketmq.common.BrokerConfig;
-import org.apache.rocketmq.common.BrokerIdentity;
-import org.apache.rocketmq.common.MixAll;
-import org.apache.rocketmq.common.Pair;
-import org.apache.rocketmq.common.ServiceThread;
-import org.apache.rocketmq.common.SystemClock;
-import org.apache.rocketmq.common.ThreadFactoryImpl;
-import org.apache.rocketmq.common.TopicConfig;
-import org.apache.rocketmq.common.UtilAll;
+import org.apache.rocketmq.common.*;
 import org.apache.rocketmq.common.attribute.CQType;
 import org.apache.rocketmq.common.attribute.CleanupPolicy;
 import org.apache.rocketmq.common.constant.LoggerName;
-import org.apache.rocketmq.common.message.MessageConst;
-import org.apache.rocketmq.common.message.MessageDecoder;
-import org.apache.rocketmq.common.message.MessageExt;
-import org.apache.rocketmq.common.message.MessageExtBatch;
-import org.apache.rocketmq.common.message.MessageExtBrokerInner;
+import org.apache.rocketmq.common.message.*;
 import org.apache.rocketmq.common.running.RunningStats;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
 import org.apache.rocketmq.common.topic.TopicValidator;
@@ -106,15 +58,26 @@ import org.apache.rocketmq.store.kv.CompactionService;
 import org.apache.rocketmq.store.kv.CompactionStore;
 import org.apache.rocketmq.store.logfile.MappedFile;
 import org.apache.rocketmq.store.metrics.DefaultStoreMetricsManager;
-import org.apache.rocketmq.store.queue.ConsumeQueueInterface;
-import org.apache.rocketmq.store.queue.ConsumeQueueStore;
-import org.apache.rocketmq.store.queue.ConsumeQueueStoreInterface;
-import org.apache.rocketmq.store.queue.CqUnit;
-import org.apache.rocketmq.store.queue.ReferredIterator;
+import org.apache.rocketmq.store.queue.*;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 import org.apache.rocketmq.store.timer.TimerMessageStore;
 import org.apache.rocketmq.store.util.PerfCounter;
 import org.rocksdb.RocksDBException;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.net.Inet6Address;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileLock;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 public class DefaultMessageStore implements MessageStore {
     protected static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
@@ -336,28 +299,37 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     /**
-     * @throws IOException
+     * 启动阶段加载存储文件和运行元数据, 包含 CommitLog, ConsumeQueue, 索引和恢复流程<br>
+     * 主要流程: 判断上次退出状态, 加载核心文件, 恢复检查点和索引, 执行数据恢复并记录 broker 初始偏移量<br>
+     * 若任一步骤失败则返回 false, 并关闭预分配文件服务避免继续分配资源
+     *
+     * @return true 表示加载成功, false 表示加载失败
      */
     @Override
     public boolean load() {
         boolean result = true;
 
         try {
+            // 根据 abort 文件判断上次是否正常退出, 恢复流程会据此选择正常或异常恢复路径
             boolean lastExitOK = !this.isTempFileExist();
             LOGGER.info("last shutdown {}, store path root dir: {}",
                 lastExitOK ? "normally" : "abnormally", messageStoreConfig.getStorePathRootDir());
 
             // load Commit Log
+            // 先加载 CommitLog, 后续消费队列和索引恢复依赖物理日志边界
             result = this.commitLog.load();
 
             // load Consume Queue
+            // 加载 ConsumeQueue 以及关联存储, 失败时终止后续恢复
             result = result && this.consumeQueueStore.load();
 
             if (messageStoreConfig.isEnableCompaction()) {
+                // 开启 compaction 时恢复压缩服务状态, 保证 compact topic 的读写一致性
                 result = result && this.compactionService.load(lastExitOK);
             }
 
             if (result) {
+                // 所有基础文件加载成功后再恢复检查点和索引, 避免使用不完整元数据
                 loadCheckPoint();
                 result = this.indexService.load(lastExitOK);
                 this.recover(lastExitOK);
@@ -365,6 +337,7 @@ public class DefaultMessageStore implements MessageStore {
             }
 
 
+            // 记录 broker 启动时最大物理偏移, 供复制模块和监控模块初始化使用
             long maxOffset = this.getMaxPhyOffset();
             this.setBrokerInitMaxOffset(maxOffset);
             LOGGER.info("load over, and the max phy offset = {}", maxOffset);
@@ -374,17 +347,27 @@ public class DefaultMessageStore implements MessageStore {
         }
 
         if (!result) {
+            // 加载失败时停止预分配线程, 避免继续创建映射文件导致状态扩散
             this.allocateMappedFileService.shutdown();
         }
 
         return result;
     }
 
+    /**
+     * 加载 StoreCheckpoint 文件并恢复关键偏移量状态, 包括 masterFlushedOffset 和 confirmOffset<br>
+     * 该步骤用于在 broker 启动后恢复刷盘边界和确认边界, 避免重复分发或越界读取
+     *
+     * @throws IOException 读取 checkpoint 文件失败时抛出异常
+     */
     public void loadCheckPoint() throws IOException {
+        // 打开或创建 checkpoint 文件, 以恢复上次停机时的持久化边界
         this.storeCheckpoint =
             new StoreCheckpoint(
                 StorePathConfigHelper.getStoreCheckpoint(this.messageStoreConfig.getStorePathRootDir()));
+        // 恢复 master 已刷盘偏移量, 供 HA 同步和刷盘统计使用
         this.masterFlushedOffset = this.storeCheckpoint.getMasterFlushedOffset();
+        // 恢复确认偏移量, 确保读取和复制链路从一致位置继续
         setConfirmOffset(this.storeCheckpoint.getConfirmPhyOffset());
     }
 
@@ -1899,17 +1882,27 @@ public class DefaultMessageStore implements MessageStore {
         return this.brokerConfig.isRecoverConcurrently() && !this.messageStoreConfig.isEnableRocksDBStore();
     }
 
+    /**
+     * 执行消息存储恢复流程, 依次恢复 ConsumeQueue, CommitLog 和 TopicQueue 偏移表<br>
+     * 恢复模式由 lastExitOK 决定, 正常退出走正常恢复, 异常退出走容错恢复<br>
+     * 该方法会记录各阶段耗时, 便于排查启动慢和恢复异常问题
+     *
+     * @param lastExitOK 上次退出是否正常
+     * @throws RocksDBException RocksDB 模式下恢复逻辑文件可能抛出异常
+     */
     private void recover(final boolean lastExitOK) throws RocksDBException {
         boolean recoverConcurrently = this.isRecoverConcurrently();
         LOGGER.info("message store recover mode: {}", recoverConcurrently ? "concurrent" : "normal");
 
         // recover consume queue
+        // 首先恢复逻辑队列, 获取其感知到的最大物理偏移作为 CommitLog 恢复上界
         long recoverConsumeQueueStart = System.currentTimeMillis();
         this.recoverConsumeQueue();
         long maxPhyOffsetOfConsumeQueue = this.consumeQueueStore.getMaxPhyOffsetInConsumeQueue();
         long recoverConsumeQueueEnd = System.currentTimeMillis();
 
         // recover commitlog
+        // 根据上次停机状态选择恢复策略, 异常恢复会执行更多校验和截断
         if (lastExitOK) {
             this.commitLog.recoverNormally(maxPhyOffsetOfConsumeQueue);
         } else {
@@ -1917,6 +1910,7 @@ public class DefaultMessageStore implements MessageStore {
         }
 
         // recover consume offset table
+        // 重新构建 TopicQueue 偏移表, 使消费位点与恢复后的 CommitLog 对齐
         long recoverCommitLogEnd = System.currentTimeMillis();
         this.recoverTopicQueueTable();
         long recoverConsumeOffsetEnd = System.currentTimeMillis();

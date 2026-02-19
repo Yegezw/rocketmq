@@ -25,15 +25,29 @@ import org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBo
 
 public class MessageRequestModeManager extends ConfigManager {
 
+    /**
+     * Broker 控制器引用, 用于解析消息请求模式配置文件路径
+     */
     private transient BrokerController brokerController;
 
-    private ConcurrentHashMap<String/*topic*/, ConcurrentHashMap<String/*consumerGroup*/, SetMessageRequestModeRequestBody>>
+    /**
+     * 消息请求模式映射表, 按 topic 和 consumerGroup 两级维度保存消费模式配置
+     */
+    private ConcurrentHashMap<String/*topic: 主题*/, ConcurrentHashMap<String/*consumerGroup: 消费组*/, SetMessageRequestModeRequestBody>>
         messageRequestModeMap = new ConcurrentHashMap<>();
 
+    /**
+     * 默认构造方法, 仅用于反序列化创建对象
+     */
     public MessageRequestModeManager() {
-        // empty construct for decode
+        // empty construct for decode, 用于反序列化场景
     }
 
+    /**
+     * 使用 Broker 控制器构建管理器实例, 供运行时读写与持久化消息请求模式配置
+     *
+     * @param brokerController Broker 控制器
+     */
     public MessageRequestModeManager(BrokerController brokerController) {
         this.brokerController = brokerController;
     }
@@ -68,16 +82,31 @@ public class MessageRequestModeManager extends ConfigManager {
         this.messageRequestModeMap = messageRequestModeMap;
     }
 
+    /**
+     * 编码当前配置对象, 生成紧凑 JSON 字符串
+     *
+     * @return 配置内容对应的 JSON 文本
+     */
     @Override
     public String encode() {
         return this.encode(false);
     }
 
+    /**
+     * 返回消息请求模式配置文件路径, 用于 ConfigManager 统一落盘
+     *
+     * @return 配置文件绝对路径
+     */
     @Override
     public String configFilePath() {
         return BrokerPathConfigHelper.getMessageRequestModePath(this.brokerController.getMessageStoreConfig().getStorePathRootDir());
     }
 
+    /**
+     * 从 JSON 字符串恢复消息请求模式配置, 仅在输入有效时覆盖当前内存映射
+     *
+     * @param jsonString 配置 JSON 文本
+     */
     @Override
     public void decode(String jsonString) {
         if (jsonString != null) {
@@ -88,6 +117,12 @@ public class MessageRequestModeManager extends ConfigManager {
         }
     }
 
+    /**
+     * 按指定格式编码当前配置对象
+     *
+     * @param prettyFormat 是否输出格式化 JSON
+     * @return 配置内容对应的 JSON 文本
+     */
     @Override
     public String encode(boolean prettyFormat) {
         return RemotingSerializable.toJson(this, prettyFormat);

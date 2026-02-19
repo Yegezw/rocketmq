@@ -17,9 +17,24 @@
 
 package org.apache.rocketmq.broker.longpolling;
 
+/**
+ * 长轮询入队结果枚举, 用于指示请求当前处理状态
+ */
 public enum PollingResult {
+    /**
+     * 请求成功进入长轮询等待队列
+     */
     POLLING_SUC,
+    /**
+     * 轮询队列达到容量上限
+     */
     POLLING_FULL,
+    /**
+     * 请求在入队前已经接近超时
+     */
     POLLING_TIMEOUT,
+    /**
+     * 当前请求不满足长轮询条件
+     */
     NOT_POLLING;
 }

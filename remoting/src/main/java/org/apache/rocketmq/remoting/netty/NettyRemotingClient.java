@@ -329,12 +329,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
         nettyEventExecutor.start();
 
         TimerTask timerTaskScanResponseTable = new TimerTask() {
-
-            /**
-             * 周期扫描响应表并清理超时请求
-             *
-             * @param timeout 定时任务上下文
-             */
+            // 周期扫描响应表并清理超时请求
             @Override
             public void run(Timeout timeout) {
                 try {
@@ -351,12 +346,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
         if (nettyClientConfig.isScanAvailableNameSrv()) {
             int connectTimeoutMillis = this.nettyClientConfig.getConnectTimeoutMillis();
             TimerTask timerTaskScanAvailableNameSrv = new TimerTask() {
-
-                /**
-                 * 周期扫描可用 NameServer
-                 *
-                 * @param timeout 定时任务上下文
-                 */
+                // 周期扫描可用 NameServer
                 @Override
                 public void run(Timeout timeout) {
                     try {
@@ -469,7 +459,6 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
                     }
 
                     // Netty Socks5 Proxy
-                    // Netty Socks5 代理
                     if (proxy != null) {
                         String[] hostAndPort = getHostAndPort(proxy.getAddr());
                         pipeline.addFirst(new Socks5ProxyHandler(
@@ -488,7 +477,6 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
             });
 
         // Support Netty Socks5 Proxy
-        // 支持 Netty Socks5 代理
         if (proxy != null) {
             bootstrap.resolver(NoopAddressResolverGroup.INSTANCE);
         }
@@ -682,7 +670,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
             }
 
             if (update) {
-                Collections.shuffle(addrs);
+                Collections.shuffle(addrs); // 负载均衡
                 LOGGER.info("name server address updated. NEW : {} , OLD: {}", addrs, old);
                 this.namesrvAddrList.set(addrs);
 
@@ -1256,10 +1244,7 @@ public class NettyRemotingClient extends NettyRemotingAbstract implements Remoti
 
         for (final String namesrvAddr : nameServerList) {
             scanExecutor.execute(new Runnable() {
-
-                /**
-                 * 执行单个 NameServer 可用性检查
-                 */
+                // 执行单个 NameServer 可用性检查
                 @Override
                 public void run() {
                     try {

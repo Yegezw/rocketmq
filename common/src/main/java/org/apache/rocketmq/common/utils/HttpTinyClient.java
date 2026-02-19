@@ -17,6 +17,9 @@
 
 package org.apache.rocketmq.common.utils;
 
+import org.apache.rocketmq.common.MQVersion;
+import org.apache.rocketmq.common.MixAll;
+
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
@@ -24,11 +27,23 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.util.Iterator;
 import java.util.List;
-import org.apache.rocketmq.common.MQVersion;
-import org.apache.rocketmq.common.MixAll;
 
+/**
+ * 轻量 HTTP 客户端工具, 用于执行简化的 GET 与 POST 请求
+ */
 public class HttpTinyClient {
 
+    /**
+     * 发送 HTTP GET 请求
+     *
+     * @param url 请求地址
+     * @param headers 请求头键值对列表, 采用 key value 交替方式组织
+     * @param paramValues 查询参数键值对列表, 采用 key value 交替方式组织
+     * @param encoding 编码格式
+     * @param readTimeoutMs 连接与读取超时时间, 单位毫秒
+     * @return HTTP 响应结果
+     * @throws IOException 网络或 IO 异常
+     */
     static public HttpResult httpGet(String url, List<String> headers, List<String> paramValues,
         String encoding, long readTimeoutMs) throws IOException {
         String encodedContent = encodingParams(paramValues, encoding);
@@ -59,6 +74,15 @@ public class HttpTinyClient {
         }
     }
 
+    /**
+     * 对参数列表执行 URL 编码<br>
+     * 调用方需要保证参数按 key value 成对传入
+     *
+     * @param paramValues 参数键值对列表
+     * @param encoding 编码格式
+     * @return 编码后的查询字符串, 无参数时返回 null
+     * @throws UnsupportedEncodingException 指定编码不受支持时抛出
+     */
     static private String encodingParams(List<String> paramValues, String encoding)
         throws UnsupportedEncodingException {
         StringBuilder sb = new StringBuilder();
@@ -76,6 +100,14 @@ public class HttpTinyClient {
         return sb.toString();
     }
 
+    /**
+     * 设置 HTTP 请求头<br>
+     * 会附加客户端版本, 内容类型与请求时间戳
+     *
+     * @param conn HTTP 连接对象
+     * @param headers 额外请求头键值对列表
+     * @param encoding 编码格式
+     */
     static private void setHeaders(HttpURLConnection conn, List<String> headers, String encoding) {
         if (null != headers) {
             for (Iterator<String> iter = headers.iterator(); iter.hasNext(); ) {
@@ -90,7 +122,7 @@ public class HttpTinyClient {
     }
 
     /**
-     * @return the http response of given http post request
+     * @return the http response of given http post request<br>给定 HTTP POST 请求的响应结果
      */
     static public HttpResult httpPost(String url, List<String> headers, List<String> paramValues,
         String encoding, long readTimeoutMs) throws IOException {
@@ -124,10 +156,25 @@ public class HttpTinyClient {
         }
     }
 
+    /**
+     * HTTP 响应结果封装
+     */
     static public class HttpResult {
+        /**
+         * HTTP 状态码
+         */
         final public int code;
+        /**
+         * 响应体内容
+         */
         final public String content;
 
+        /**
+         * 构造 HTTP 响应结果
+         *
+         * @param code HTTP 状态码
+         * @param content 响应体内容
+         */
         public HttpResult(int code, String content) {
             this.code = code;
             this.content = content;

@@ -16,8 +16,24 @@
  */
 package org.apache.rocketmq.store.config;
 
+/**
+ * Broker 运行角色枚举<br>
+ * 用于定义主从复制语义与请求处理策略
+ */
 public enum BrokerRole {
+    /**
+     * 异步主节点<br>
+     * 主节点写入成功后不等待从节点确认
+     */
     ASYNC_MASTER,
+    /**
+     * 同步主节点<br>
+     * 主节点写入成功前需要等待从节点复制确认
+     */
     SYNC_MASTER,
+    /**
+     * 从节点<br>
+     * 通过复制链路追随主节点并提供从读能力
+     */
     SLAVE;
 }

@@ -682,31 +682,19 @@ public abstract class NettyRemotingAbstract {
             AtomicReference<ResponseFuture> responseFutureReference = new AtomicReference<>();
             final ResponseFuture responseFuture = new ResponseFuture(channel, opaque, request, timeoutMillis - costTime,
                 new InvokeCallback() {
-                    /**
-                     * 异步完成通知, 当前实现无额外处理
-                     *
-                     * @param responseFuture 响应 Future
-                     */
+                    // 异步完成通知, 当前实现无额外处理
                     @Override
                     public void operationComplete(ResponseFuture responseFuture) {
 
                     }
 
-                    /**
-                     * 请求成功回调, 将上层 Future 标记完成
-                     *
-                     * @param response 响应命令
-                     */
+                    // 请求成功回调, 将上层 Future 标记完成
                     @Override
                     public void operationSucceed(RemotingCommand response) {
                         future.complete(responseFutureReference.get());
                     }
 
-                    /**
-                     * 请求失败回调, 将上层 Future 标记异常
-                     *
-                     * @param throwable 失败异常
-                     */
+                    // 请求失败回调, 将上层 Future 标记异常
                     @Override
                     public void operationFail(Throwable throwable) {
                         future.completeExceptionally(throwable);

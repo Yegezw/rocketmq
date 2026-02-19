@@ -16,34 +16,47 @@
  */
 package org.apache.rocketmq.common;
 
-import java.util.HashMap;
-import java.util.Map;
 import org.apache.rocketmq.common.attribute.Attribute;
 import org.apache.rocketmq.common.attribute.EnumAttribute;
 import org.apache.rocketmq.common.attribute.LongRangeAttribute;
 import org.apache.rocketmq.common.attribute.TopicMessageType;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import static com.google.common.collect.Sets.newHashSet;
 
 public class TopicAttributes {
+    /**
+     * 主题队列类型属性, 取值为 BatchCQ 或 SimpleCQ
+     */
     public static final EnumAttribute QUEUE_TYPE_ATTRIBUTE = new EnumAttribute(
         "queue.type",
         false,
         newHashSet("BatchCQ", "SimpleCQ"),
         "SimpleCQ"
     );
+    /**
+     * 主题清理策略属性, 取值为 DELETE 或 COMPACTION
+     */
     public static final EnumAttribute CLEANUP_POLICY_ATTRIBUTE = new EnumAttribute(
         "cleanup.policy",
         false,
         newHashSet("DELETE", "COMPACTION"),
         "DELETE"
     );
+    /**
+     * 主题消息类型属性, 用于限制允许发送的消息语义
+     */
     public static final EnumAttribute TOPIC_MESSAGE_TYPE_ATTRIBUTE = new EnumAttribute(
         "message.type",
         true,
         TopicMessageType.topicMessageTypeSet(),
         TopicMessageType.NORMAL.getValue()
     );
+    /**
+     * 主题数据保留时间属性, 单位为秒, -1 表示使用存储默认策略
+     */
     public static final LongRangeAttribute TOPIC_RESERVE_TIME_ATTRIBUTE = new LongRangeAttribute(
         "reserve.time",
         true,
@@ -52,8 +65,12 @@ public class TopicAttributes {
         -1
     );
 
+    /**
+     * 全量主题属性定义, 键为属性名, 值为属性对象
+     */
     public static final Map<String, Attribute> ALL;
 
+    // 初始化主题属性注册表
     static {
         ALL = new HashMap<>();
         ALL.put(QUEUE_TYPE_ATTRIBUTE.getName(), QUEUE_TYPE_ATTRIBUTE);

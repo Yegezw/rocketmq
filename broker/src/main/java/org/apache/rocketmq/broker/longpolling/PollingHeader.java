@@ -20,13 +20,36 @@ package org.apache.rocketmq.broker.longpolling;
 import org.apache.rocketmq.remoting.protocol.header.NotificationRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader;
 
+/**
+ * 统一封装 POP 与 Notification 长轮询请求头, 便于复用轮询流程
+ */
 public class PollingHeader {
+    /**
+     * 消费组标识, 用于隔离不同订阅者的轮询队列
+     */
     private final String consumerGroup;
+    /**
+     * 轮询目标主题
+     */
     private final String topic;
+    /**
+     * 轮询目标队列编号, -1 表示全队列广播键
+     */
     private final int queueId;
+    /**
+     * 客户端请求创建时间戳
+     */
     private final long bornTime;
+    /**
+     * 客户端允许的轮询时长, 单位毫秒
+     */
     private final long pollTime;
 
+    /**
+     * 从 POP 请求头构造统一轮询头
+     *
+     * @param requestHeader POP 请求头
+     */
     public PollingHeader(PopMessageRequestHeader requestHeader) {
         this.consumerGroup = requestHeader.getConsumerGroup();
         this.topic = requestHeader.getTopic();
@@ -35,6 +58,11 @@ public class PollingHeader {
         this.pollTime = requestHeader.getPollTime();
     }
 
+    /**
+     * 从 Notification 请求头构造统一轮询头
+     *
+     * @param requestHeader Notification 请求头
+     */
     public PollingHeader(NotificationRequestHeader requestHeader) {
         this.consumerGroup = requestHeader.getConsumerGroup();
         this.topic = requestHeader.getTopic();

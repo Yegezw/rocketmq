@@ -180,127 +180,485 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+/**
+ * Broker 控制器<br>
+ * 负责 Broker 生命周期管理与核心组件协同
+ */
 public class BrokerController {
+    /**
+     * Broker 日志记录器
+     */
     protected static final Logger LOG = LoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
+    /**
+     * 保护日志记录器
+     */
     private static final Logger LOG_PROTECTION = LoggerFactory.getLogger(LoggerName.PROTECTION_LOGGER_NAME);
+    /**
+     * 水位日志记录器
+     */
     private static final Logger LOG_WATER_MARK = LoggerFactory.getLogger(LoggerName.WATER_MARK_LOGGER_NAME);
+    /**
+     * HA 地址最小长度常量
+     */
     protected static final int HA_ADDRESS_MIN_LENGTH = 6;
 
+    /**
+     * Broker 配置对象
+     */
     protected final BrokerConfig brokerConfig;
+    /**
+     * Netty 服务端配置
+     */
     private final NettyServerConfig nettyServerConfig;
+    /**
+     * Netty 客户端配置
+     */
     private final NettyClientConfig nettyClientConfig;
+    /**
+     * 消息存储配置
+     */
     protected final MessageStoreConfig messageStoreConfig;
+    /**
+     * 认证授权配置
+     */
     private final AuthConfig authConfig;
+    /**
+     * 消费位点管理器
+     */
     protected ConsumerOffsetManager consumerOffsetManager;
+    /**
+     * 广播位点管理器
+     */
     protected final BroadcastOffsetManager broadcastOffsetManager;
+    /**
+     * 消费者管理器
+     */
     protected final ConsumerManager consumerManager;
+    /**
+     * 消费者过滤管理器
+     */
     protected final ConsumerFilterManager consumerFilterManager;
+    /**
+     * 顺序消费信息管理器
+     */
     protected final ConsumerOrderInfoManager consumerOrderInfoManager;
+    /**
+     * POP 在途消息计数器
+     */
     protected final PopInflightMessageCounter popInflightMessageCounter;
+    /**
+     * POP 消费服务
+     */
     protected final PopConsumerService popConsumerService;
+    /**
+     * 生产者管理器
+     */
     protected final ProducerManager producerManager;
+    /**
+     * 定时消息服务
+     */
     protected final ScheduleMessageService scheduleMessageService;
+    /**
+     * 客户端连接管理服务
+     */
     protected final ClientHousekeepingService clientHousekeepingService;
+    /**
+     * 拉消息处理器
+     */
     protected final PullMessageProcessor pullMessageProcessor;
+    /**
+     * 窥探消息处理器
+     */
     protected final PeekMessageProcessor peekMessageProcessor;
+    /**
+     * POP 消息处理器
+     */
     protected final PopMessageProcessor popMessageProcessor;
+    /**
+     * ACK 消息处理器
+     */
     protected final AckMessageProcessor ackMessageProcessor;
+    /**
+     * 修改不可见时间处理器
+     */
     protected final ChangeInvisibleTimeProcessor changeInvisibleTimeProcessor;
+    /**
+     * 通知处理器
+     */
     protected final NotificationProcessor notificationProcessor;
+    /**
+     * 轮询信息处理器
+     */
     protected final PollingInfoProcessor pollingInfoProcessor;
+    /**
+     * 查询分配处理器
+     */
     protected final QueryAssignmentProcessor queryAssignmentProcessor;
+    /**
+     * 客户端管理处理器
+     */
     protected final ClientManageProcessor clientManageProcessor;
+    /**
+     * 发送消息处理器
+     */
     protected final SendMessageProcessor sendMessageProcessor;
+    /**
+     * 撤回消息处理器
+     */
     protected final RecallMessageProcessor recallMessageProcessor;
+    /**
+     * 回复消息处理器
+     */
     protected final ReplyMessageProcessor replyMessageProcessor;
+    /**
+     * 拉请求挂起服务
+     */
     protected final PullRequestHoldService pullRequestHoldService;
+    /**
+     * 消息到达监听器
+     */
     protected final MessageArrivingListener messageArrivingListener;
+    /**
+     * Broker 到客户端服务
+     */
     protected final Broker2Client broker2Client;
+    /**
+     * 消费者 ID 变更监听器
+     */
     protected final ConsumerIdsChangeListener consumerIdsChangeListener;
+    /**
+     * 结束事务处理器
+     */
     protected final EndTransactionProcessor endTransactionProcessor;
+    /**
+     * 重平衡锁管理器
+     */
     private final RebalanceLockManager rebalanceLockManager = new RebalanceLockManager();
+    /**
+     * 主题路由信息管理器
+     */
     private final TopicRouteInfoManager topicRouteInfoManager;
+    /**
+     * Broker 外部通信 API
+     */
     protected BrokerOuterAPI brokerOuterAPI;
+    /**
+     * 定时任务执行器
+     */
     protected ScheduledExecutorService scheduledExecutorService;
+    /**
+     * 成员组同步执行器
+     */
     protected ScheduledExecutorService syncBrokerMemberGroupExecutorService;
+    /**
+     * 心跳执行器
+     */
     protected ScheduledExecutorService brokerHeartbeatExecutorService;
+    /**
+     * 从节点同步服务
+     */
     protected final SlaveSynchronize slaveSynchronize;
+    /**
+     * 发送线程池队列
+     */
     protected final BlockingQueue<Runnable> sendThreadPoolQueue;
+    /**
+     * 存储线程池队列
+     */
     protected final BlockingQueue<Runnable> putThreadPoolQueue;
+    /**
+     * ACK 线程池队列
+     */
     protected final BlockingQueue<Runnable> ackThreadPoolQueue;
+    /**
+     * 拉取线程池队列
+     */
     protected final BlockingQueue<Runnable> pullThreadPoolQueue;
+    /**
+     * 轻量拉取线程池队列
+     */
     protected final BlockingQueue<Runnable> litePullThreadPoolQueue;
+    /**
+     * 回复线程池队列
+     */
     protected final BlockingQueue<Runnable> replyThreadPoolQueue;
+    /**
+     * 查询线程池队列
+     */
     protected final BlockingQueue<Runnable> queryThreadPoolQueue;
+    /**
+     * 客户端管理线程池队列
+     */
     protected final BlockingQueue<Runnable> clientManagerThreadPoolQueue;
+    /**
+     * 心跳线程池队列
+     */
     protected final BlockingQueue<Runnable> heartbeatThreadPoolQueue;
+    /**
+     * 消费者管理线程池队列
+     */
     protected final BlockingQueue<Runnable> consumerManagerThreadPoolQueue;
+    /**
+     * 结束事务线程池队列
+     */
     protected final BlockingQueue<Runnable> endTransactionThreadPoolQueue;
+    /**
+     * 管理线程池队列
+     */
     protected final BlockingQueue<Runnable> adminBrokerThreadPoolQueue;
+    /**
+     * 负载均衡线程池队列
+     */
     protected final BlockingQueue<Runnable> loadBalanceThreadPoolQueue;
+    /**
+     * Broker 统计管理器
+     */
     protected BrokerStatsManager brokerStatsManager;
+    /**
+     * 发送消息 Hook 列表
+     */
     protected final List<SendMessageHook> sendMessageHookList = new ArrayList<>();
+    /**
+     * 消费消息 Hook 列表
+     */
     protected final List<ConsumeMessageHook> consumeMessageHookList = new ArrayList<>();
+    /**
+     * 消息存储实现
+     */
     protected MessageStore messageStore;
+    /**
+     * TCP remoting 服务标识
+     */
     protected static final String TCP_REMOTING_SERVER = "TCP_REMOTING_SERVER";
+    /**
+     * FAST remoting 服务标识
+     */
     protected static final String FAST_REMOTING_SERVER = "FAST_REMOTING_SERVER";
+    /**
+     * remoting 服务映射
+     */
     protected final Map<String, RemotingServer> remotingServerMap = new ConcurrentHashMap<>();
+    /**
+     * remoting 启动闭锁
+     */
     protected CountDownLatch remotingServerStartLatch;
     /**
      * If {Topic, SubscriptionGroup, Offset}ManagerV2 are used, config entries are stored in RocksDB.
+     * <br>
+     * 若使用 {Topic, SubscriptionGroup, Offset} ManagerV2, 配置项会存储在 RocksDB 中
      */
     protected ConfigStorage configStorage;
+    /**
+     * 主题配置管理器
+     */
     protected TopicConfigManager topicConfigManager;
+    /**
+     * 订阅组管理器
+     */
     protected SubscriptionGroupManager subscriptionGroupManager;
+    /**
+     * 主题队列映射管理器
+     */
     protected TopicQueueMappingManager topicQueueMappingManager;
+    /**
+     * 发送消息执行器
+     */
     protected ExecutorService sendMessageExecutor;
+    /**
+     * 拉消息执行器
+     */
     protected ExecutorService pullMessageExecutor;
+    /**
+     * 轻量拉消息执行器
+     */
     protected ExecutorService litePullMessageExecutor;
+    /**
+     * 存储 Future 执行器
+     */
     protected ExecutorService putMessageFutureExecutor;
+    /**
+     * ACK 消息执行器
+     */
     protected ExecutorService ackMessageExecutor;
+    /**
+     * 回复消息执行器
+     */
     protected ExecutorService replyMessageExecutor;
+    /**
+     * 查询消息执行器
+     */
     protected ExecutorService queryMessageExecutor;
+    /**
+     * 管理请求执行器
+     */
     protected ExecutorService adminBrokerExecutor;
+    /**
+     * 客户端管理执行器
+     */
     protected ExecutorService clientManageExecutor;
+    /**
+     * 心跳执行器
+     */
     protected ExecutorService heartbeatExecutor;
+    /**
+     * 消费者管理执行器
+     */
     protected ExecutorService consumerManageExecutor;
+    /**
+     * 负载均衡执行器
+     */
     protected ExecutorService loadBalanceExecutor;
+    /**
+     * 结束事务执行器
+     */
     protected ExecutorService endTransactionExecutor;
+    /**
+     * 是否周期更新主节点 HA 地址
+     */
     protected boolean updateMasterHAServerAddrPeriodically = false;
+    /**
+     * Broker 统计对象
+     */
     private BrokerStats brokerStats;
+    /**
+     * 存储地址
+     */
     private InetSocketAddress storeHost;
+    /**
+     * 定时消息存储
+     */
     private TimerMessageStore timerMessageStore;
+    /**
+     * 定时器检查点
+     */
     private TimerCheckpoint timerCheckpoint;
+    /**
+     * 快速失败组件
+     */
     protected BrokerFastFailure brokerFastFailure;
+    /**
+     * 配置管理器
+     */
     private Configuration configuration;
+    /**
+     * 主题队列映射清理服务
+     */
     protected TopicQueueMappingCleanService topicQueueMappingCleanService;
+    /**
+     * 文件监听服务
+     */
     protected FileWatchService fileWatchService;
+    /**
+     * 事务消息回查服务
+     */
     protected TransactionalMessageCheckService transactionalMessageCheckService;
+    /**
+     * 事务消息服务
+     */
     protected TransactionalMessageService transactionalMessageService;
+    /**
+     * 事务回查监听器
+     */
     protected AbstractTransactionalMessageCheckListener transactionalMessageCheckListener;
+    /**
+     * 关闭状态标记
+     */
     protected volatile boolean shutdown = false;
+    /**
+     * 关闭钩子
+     */
     protected ShutdownHook shutdownHook;
+    /**
+     * 定时服务启动标记
+     */
     private volatile boolean isScheduleServiceStart = false;
+    /**
+     * 事务回查服务启动标记
+     */
     private volatile boolean isTransactionCheckServiceStart = false;
+    /**
+     * Broker 成员组信息
+     */
     protected volatile BrokerMemberGroup brokerMemberGroup;
+    /**
+     * 逃逸桥接服务
+     */
     protected EscapeBridge escapeBridge;
+    /**
+     * 附加插件列表
+     */
     protected List<BrokerAttachedPlugin> brokerAttachedPlugins = new ArrayList<>();
+    /**
+     * 应启动时间戳
+     */
     protected volatile long shouldStartTime;
+    /**
+     * Broker 预上线服务
+     */
     private BrokerPreOnlineService brokerPreOnlineService;
+    /**
+     * 隔离状态标记
+     */
     protected volatile boolean isIsolated = false;
+    /**
+     * 组内最小 brokerId
+     */
     protected volatile long minBrokerIdInGroup = 0;
+    /**
+     * 组内最小 broker 地址
+     */
     protected volatile String minBrokerAddrInGroup = null;
+    /**
+     * 并发控制锁
+     */
     private final Lock lock = new ReentrantLock();
+    /**
+     * 定时任务 Future 列表
+     */
     protected final List<ScheduledFuture<?>> scheduledFutures = new ArrayList<>();
+    /**
+     * 副本管理器
+     */
     protected ReplicasManager replicasManager;
+    /**
+     * 最近同步时间戳
+     */
     private long lastSyncTimeMs = System.currentTimeMillis();
+    /**
+     * Broker 指标管理器
+     */
     private BrokerMetricsManager brokerMetricsManager;
+    /**
+     * 冷数据拉请求挂起服务
+     */
     private ColdDataPullRequestHoldService coldDataPullRequestHoldService;
+    /**
+     * 冷数据消费组控制服务
+     */
     private ColdDataCgCtrService coldDataCgCtrService;
+    /**
+     * 事务指标刷新服务
+     */
     private TransactionMetricsFlushService transactionMetricsFlushService;
+    /**
+     * 认证元数据管理器
+     */
     private AuthenticationMetadataManager authenticationMetadataManager;
+    /**
+     * 鉴权元数据管理器
+     */
     private AuthorizationMetadataManager authorizationMetadataManager;
 
+    /**
+     * 构造 Broker 控制器
+     *
+     * @param brokerConfig Broker 配置
+     * @param nettyServerConfig Netty 服务端配置
+     * @param nettyClientConfig Netty 客户端配置
+     * @param messageStoreConfig 消息存储配置
+     * @param authConfig 认证授权配置
+     * @param shutdownHook 关闭钩子
+     */
     public BrokerController(
         final BrokerConfig brokerConfig,
         final NettyServerConfig nettyServerConfig,
@@ -313,6 +671,12 @@ public class BrokerController {
         this.shutdownHook = shutdownHook;
     }
 
+    /**
+     * 构造 Broker 控制器
+     *
+     * @param brokerConfig Broker 配置
+     * @param messageStoreConfig 消息存储配置
+     */
     public BrokerController(
         final BrokerConfig brokerConfig,
         final MessageStoreConfig messageStoreConfig
@@ -320,6 +684,14 @@ public class BrokerController {
         this(brokerConfig, null, null, messageStoreConfig, null);
     }
 
+    /**
+     * 构造 Broker 控制器
+     *
+     * @param brokerConfig Broker 配置
+     * @param nettyServerConfig Netty 服务端配置
+     * @param nettyClientConfig Netty 客户端配置
+     * @param messageStoreConfig 消息存储配置
+     */
     public BrokerController(
         final BrokerConfig brokerConfig,
         final NettyServerConfig nettyServerConfig,
@@ -329,6 +701,15 @@ public class BrokerController {
         this(brokerConfig, nettyServerConfig, nettyClientConfig, messageStoreConfig, null);
     }
 
+    /**
+     * 构造 Broker 控制器
+     *
+     * @param brokerConfig Broker 配置
+     * @param nettyServerConfig Netty 服务端配置
+     * @param nettyClientConfig Netty 客户端配置
+     * @param messageStoreConfig 消息存储配置
+     * @param authConfig 认证授权配置
+     */
     public BrokerController(
         final BrokerConfig brokerConfig,
         final NettyServerConfig nettyServerConfig,
@@ -342,6 +723,7 @@ public class BrokerController {
         this.messageStoreConfig = messageStoreConfig;
         this.authConfig = authConfig;
         this.setStoreHost(new InetSocketAddress(this.getBrokerConfig().getBrokerIP1(), getListenPort()));
+
         this.brokerStatsManager = messageStoreConfig.isEnableLmq() ? new LmqBrokerStatsManager(this.brokerConfig) : new BrokerStatsManager(this.brokerConfig.getBrokerClusterName(), this.brokerConfig.isEnableDetailStat());
         this.broadcastOffsetManager = new BroadcastOffsetManager(this);
         if (ConfigManagerVersion.V2.getVersion().equals(brokerConfig.getConfigManagerVersion())) {
@@ -490,6 +872,9 @@ public class BrokerController {
         return brokerMetricsManager;
     }
 
+    /**
+     * 初始化 remoting 服务端
+     */
     protected void initializeRemotingServer() throws CloneNotSupportedException {
         RemotingServer tcpRemotingServer = new NettyRemotingServer(this.nettyServerConfig, this.clientHousekeepingService);
         NettyServerConfig fastConfig = (NettyServerConfig) this.nettyServerConfig.clone();
@@ -502,12 +887,14 @@ public class BrokerController {
 
         RemotingServer fastRemotingServer = new NettyRemotingServer(fastConfig, this.clientHousekeepingService);
 
-        remotingServerMap.put(TCP_REMOTING_SERVER, tcpRemotingServer);
-        remotingServerMap.put(FAST_REMOTING_SERVER, fastRemotingServer);
+        remotingServerMap.put(TCP_REMOTING_SERVER, tcpRemotingServer);   // 10911
+        remotingServerMap.put(FAST_REMOTING_SERVER, fastRemotingServer); // 10909
     }
 
     /**
      * Initialize resources including remoting server and thread executors.
+     * <br>
+     * 初始化资源, 包括 remoting 服务端与线程执行器
      */
     protected void initializeResources() {
         this.scheduledExecutorService = ThreadUtils.newScheduledThreadPool(1,
@@ -625,9 +1012,15 @@ public class BrokerController {
         this.topicQueueMappingCleanService = new TopicQueueMappingCleanService(this);
     }
 
+    /**
+     * 初始化 Broker 定时任务
+     */
     protected void initializeBrokerScheduledTasks() {
+        // 每日统计任务: 延迟到次日 0 点触发, 之后按 24 小时固定频率执行
         final long initialDelay = UtilAll.computeNextMorningTimeMillis() - System.currentTimeMillis();
         final long period = TimeUnit.DAYS.toMillis(1);
+
+        // 任务 1: 周期记录 Broker 统计快照, 供运维观测日维度指标
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -639,6 +1032,7 @@ public class BrokerController {
             }
         }, initialDelay, period, TimeUnit.MILLISECONDS);
 
+        // 任务 2: 周期落盘消费进度, 控制重启后位点恢复误差
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -651,6 +1045,7 @@ public class BrokerController {
             }
         }, 1000 * 10, this.brokerConfig.getFlushConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
 
+        // 任务 3: 周期落盘过滤规则与顺序消费信息, 避免内存态丢失
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -665,6 +1060,7 @@ public class BrokerController {
             }
         }, 1000 * 10, 1000 * 10, TimeUnit.MILLISECONDS);
 
+        // 任务 4: 执行慢消费保护逻辑, 按阈值禁用异常消费组
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -676,6 +1072,7 @@ public class BrokerController {
             }
         }, 3, 3, TimeUnit.MINUTES);
 
+        // 任务 5: 高频打印线程池水位, 便于快速定位堆积
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -687,6 +1084,7 @@ public class BrokerController {
             }
         }, 10, 1, TimeUnit.SECONDS);
 
+        // 任务 6: 清理已删除主题对应的 Timer 指标, 防止指标集合无界增长
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -699,6 +1097,7 @@ public class BrokerController {
             }
         }, 3, 3, TimeUnit.MINUTES);
 
+        // 任务 7: 输出分发落后字节数, 用于评估 CommitLog 到消费队列分发延迟
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -712,15 +1111,22 @@ public class BrokerController {
             }
         }, 1000 * 10, 1000 * 60, TimeUnit.MILLISECONDS);
 
+        // 经典主从 HA 场景才执行以下逻辑
+        // DLedger, Duplication, Controller 模式均由各自链路管理主从关系
         if (!messageStoreConfig.isEnableDLegerCommitLog() && !messageStoreConfig.isDuplicationEnable() && !brokerConfig.isEnableControllerMode()) {
             if (BrokerRole.SLAVE == this.messageStoreConfig.getBrokerRole()) {
+                // 若配置了固定主节点地址则直接使用, 无需再周期刷新
                 if (this.messageStoreConfig.getHaMasterAddress() != null && this.messageStoreConfig.getHaMasterAddress().length() >= HA_ADDRESS_MIN_LENGTH) {
                     this.messageStore.updateHaMasterAddress(this.messageStoreConfig.getHaMasterAddress());
                     this.updateMasterHAServerAddrPeriodically = false;
                 } else {
+                    // 未配置固定主节点地址时, 后续通过注册返回结果动态刷新主节点地址
                     this.updateMasterHAServerAddrPeriodically = true;
                 }
 
+                // 从节点同步任务
+                // 1. syncAll 频率控制在 60 秒级, 避免配置全量同步过于频繁
+                // 2. TimerCheckPoint 对延迟敏感, 保持 3 秒级高频同步
                 this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
                     @Override
@@ -732,6 +1138,7 @@ public class BrokerController {
                             }
 
                             //timer checkpoint, latency-sensitive, so sync it more frequently
+                            // timer 检查点对延迟敏感, 需要更高同步频率
                             if (messageStoreConfig.isTimerWheelEnable()) {
                                 BrokerController.this.getSlaveSynchronize().syncTimerCheckPoint();
                             }
@@ -742,6 +1149,7 @@ public class BrokerController {
                 }, 1000 * 10, 3 * 1000, TimeUnit.MILLISECONDS);
 
             } else {
+                // 主节点周期打印主从落后量, 便于观察复制健康度
                 this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
                     @Override
@@ -756,19 +1164,27 @@ public class BrokerController {
             }
         }
 
+        // Controller 模式下主节点切换由 controller 协调, 需开启主节点地址周期更新
         if (this.brokerConfig.isEnableControllerMode()) {
             this.updateMasterHAServerAddrPeriodically = true;
         }
     }
 
+    /**
+     * 初始化调度任务
+     */
     protected void initializeScheduledTasks() {
 
         initializeBrokerScheduledTasks();
 
+        // 更新 NettyRemotingClient 维护的 namesrv 地址列表
+        // 1. 若已指定 namesrv 地址, 则定期更新 namesrv 地址列表
+        // 2. 否则若配置了通过地址服务器获取 namesrv 地址, 则定期从地址服务器拉取 namesrv 地址
         if (this.brokerConfig.getNamesrvAddr() != null) {
             this.updateNamesrvAddr();
             LOG.info("Set user specified name server address: {}", this.brokerConfig.getNamesrvAddr());
             // also auto update namesrv if specify
+            // 若已指定也自动更新 namesrv 地址
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -781,7 +1197,6 @@ public class BrokerController {
             }, 1000 * 10, this.brokerConfig.getUpdateNameServerAddrPeriod(), TimeUnit.MILLISECONDS);
         } else if (this.brokerConfig.isFetchNamesrvAddrByAddressServer()) {
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-
                 @Override
                 public void run() {
                     try {
@@ -794,19 +1209,32 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 更新 NameServer 地址
+     */
     private void updateNamesrvAddr() {
         if (this.brokerConfig.isFetchNameSrvAddrByDnsLookup()) {
+            // 先通过 DNS 解析域名再更新 NameServer 地址列表
             this.brokerOuterAPI.updateNameServerAddressListByDnsLookup(this.brokerConfig.getNamesrvAddr());
         } else {
+            // 按分号分隔地址字符串并更新 NameServer 地址列表
             this.brokerOuterAPI.updateNameServerAddressList(this.brokerConfig.getNamesrvAddr());
         }
     }
 
+    /**
+     * 初始化元数据组件<br>
+     * 启动配置存储并加载主题配置, 队列映射, 消费进度, 订阅组, 过滤规则与顺序消费元数据<br>
+     * 任一子组件加载失败都返回 false, 调用方据此中止 Broker 启动流程
+     *
+     * @return true 表示元数据全部加载成功
+     */
     public boolean initializeMetadata() {
         boolean result = true;
         if (null != configStorage) {
             result = configStorage.start();
         }
+        // 尝试从 json 配置文件或者 bak 备份文件中加载 json 字符串, 然后反序列化转换为自身内部的属性
         result = result && this.topicConfigManager.load();
         result = result && this.topicQueueMappingManager.load();
         result = result && this.consumerOffsetManager.load();
@@ -816,6 +1244,13 @@ public class BrokerController {
         return result;
     }
 
+    /**
+     * 初始化消息存储<br>
+     * 根据存储配置创建默认存储实现, 按需挂载 DLedger 角色变更处理器与存储插件链<br>
+     * 同时注册位图分发器并在定时消息开启时初始化 Timer 相关组件
+     *
+     * @return true 表示消息存储初始化成功
+     */
     public boolean initializeMessageStore() {
         boolean result = true;
         try {
@@ -839,6 +1274,7 @@ public class BrokerController {
             this.brokerStats = new BrokerStats(defaultMessageStore);
 
             // Load store plugin
+            // 加载存储插件
             MessageStorePluginContext context = new MessageStorePluginContext(
                 messageStoreConfig, brokerStatsManager, messageArrivingListener, brokerConfig, configuration);
             this.messageStore = MessageStoreFactory.build(context, defaultMessageStore);
@@ -857,21 +1293,45 @@ public class BrokerController {
         return result;
     }
 
+    /**
+     * 初始化 Broker 控制器<br>
+     * 按元数据, 存储, 服务恢复三个阶段串行执行, 保证失败快速返回
+     *
+     * @return true 表示 Broker 初始化完成
+     * @throws CloneNotSupportedException remoting 配置克隆失败时抛出
+     */
     public boolean initialize() throws CloneNotSupportedException {
+        // Broker 启动时, 默认会监听 3 个端口: 10909、10911、10912
+        // remotingServer     监听 10911 端口, 可以用于处理客户端的所有请求
+        // fastRemotingServer 监听 10909 端口, 对应可以处理客户端除了拉取消息之外的所有请求, 所谓的 VIP 端口
+        // haListenPort       监听 10912 端口, 用于 Broker 的主从同步, 即高可用服务
+        // 客户端生产者发送消息是默认请求 fastRemotingServer, 即所谓的 VIP 通道, 但可以通过关闭 VIP 通道配置为使用 remotingServer
+        // 消费者拉取消息只能请求 remotingServer
 
+        // 加载配置文件
         boolean result = this.initializeMetadata();
         if (!result) {
             return false;
         }
 
+        // 初始化消息存储对象 DefaultMessageStore
         result = this.initializeMessageStore();
         if (!result) {
             return false;
         }
 
+        // 恢复并初始化核心服务
         return this.recoverAndInitService();
     }
 
+    /**
+     * 恢复并初始化核心服务<br>
+     * 负责加载消息存储与插件状态, 构建 remoting 与线程池资源, 注册处理器与定时任务<br>
+     * 同时完成事务, RPC Hook, 认证流水线与 TLS 热加载监听初始化
+     *
+     * @return true 表示核心服务恢复并初始化成功
+     * @throws CloneNotSupportedException remoting 快速通道配置克隆失败时抛出
+     */
     public boolean recoverAndInitService() throws CloneNotSupportedException {
 
         boolean result = true;
@@ -891,6 +1351,7 @@ public class BrokerController {
         }
 
         //scheduleMessageService load after messageStore load success
+        // 在 messageStore 加载成功后再加载 scheduleMessageService
         result = result && this.scheduleMessageService.load();
 
         for (BrokerAttachedPlugin brokerAttachedPlugin : brokerAttachedPlugins) {
@@ -903,22 +1364,23 @@ public class BrokerController {
 
         if (result) {
 
-            initializeRemotingServer();
+            initializeRemotingServer(); // 初始化 remoting 服务端
 
-            initializeResources();
+            initializeResources();      // 初始化资源, 包括 remoting 服务端与线程执行器
 
-            registerProcessor();
+            registerProcessor();        // 注册请求处理器
 
-            initializeScheduledTasks();
+            initializeScheduledTasks(); // 初始化调度任务
 
-            initialTransaction();
+            initialTransaction();       // 初始化事务能力
 
-            initialRpcHooks();
+            initialRpcHooks();          // 初始化 RPC Hook
 
-            initialRequestPipeline();
+            initialRequestPipeline();   // 初始化请求处理流水线
 
             if (TlsSystemConfig.tlsMode != TlsMode.DISABLED) {
                 // Register a listener to reload SslContext
+                // 注册监听器用于重新加载 SslContext
                 try {
                     fileWatchService = new FileWatchService(
                         new String[] {
@@ -967,6 +1429,11 @@ public class BrokerController {
         return result;
     }
 
+    /**
+     * 注册消息存储钩子<br>
+     * 在写入前挂载基础校验, 批量消息校验, 定时消息转换等钩子<br>
+     * 同时设置 SendMessageBack 回调, 用于消费失败回退消息场景
+     */
     public void registerMessageStoreHook() {
         List<PutMessageHook> putMessageHookList = messageStore.getPutMessageHookList();
 
@@ -1024,39 +1491,64 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 初始化 broker 事务消息基础设施, 包含事务消息服务, 回查监听器和指标刷新组件<br>
+     * 初始化顺序: 先加载事务服务, 再加载回查监听器, 然后注入 BrokerController 并创建后台服务<br>
+     * SPI 未提供实现时回退默认事务实现, 保证事务半消息和回查链路可用<br>
+     * 方法返回后事务指标刷新线程已启动, 后续事务流程可直接复用该能力
+     */
     private void initialTransaction() {
+        // 优先通过 SPI 加载事务消息服务, 允许业务侧替换事务存储或处理逻辑
         this.transactionalMessageService = ServiceProvider.loadClass(TransactionalMessageService.class);
         if (null == this.transactionalMessageService) {
+            // 未配置 SPI 实现时回退默认事务服务, 默认实现通过 bridge 访问消息存储
             this.transactionalMessageService = new TransactionalMessageServiceImpl(
                 new TransactionalMessageBridge(this, this.getMessageStore()));
             LOG.warn("Load default transaction message hook service: {}",
                 TransactionalMessageServiceImpl.class.getSimpleName());
         }
+        // 加载事务回查监听器, 用于处理长时间未决事务消息的状态回查
         this.transactionalMessageCheckListener = ServiceProvider.loadClass(
             AbstractTransactionalMessageCheckListener.class);
         if (null == this.transactionalMessageCheckListener) {
+            // 未提供自定义监听器时使用默认监听器, 保证回查链路可运行
             this.transactionalMessageCheckListener = new DefaultTransactionalMessageCheckListener();
             LOG.warn("Load default discard message hook service: {}",
                 DefaultTransactionalMessageCheckListener.class.getSimpleName());
         }
+        // 注入 broker 上下文, 使回查监听器可访问 broker 运行时组件
         this.transactionalMessageCheckListener.setBrokerController(this);
+        // 构建事务状态检查服务, 由后续启动阶段负责调度执行
         this.transactionalMessageCheckService = new TransactionalMessageCheckService(this);
+        // 构建并启动事务指标刷新服务, 定期落盘事务统计数据
         this.transactionMetricsFlushService = new TransactionMetricsFlushService(this);
         this.transactionMetricsFlushService.start();
 
     }
 
+    /**
+     * 初始化 RPC Hook 组件, 用于在 remoting 请求前后执行自定义逻辑<br>
+     * 处理流程: 从 SPI 拉取 RPCHook 扩展, 判空后逐个注册到服务端链路<br>
+     * 未加载到扩展时直接返回, 保持 broker 默认请求处理路径
+     */
     private void initialRpcHooks() {
 
+        // 从 SPI 发现 RPCHook 扩展实现, 支持安全审计和链路追踪等增强逻辑
         List<RPCHook> rpcHooks = ServiceProvider.load(RPCHook.class);
+        // 无扩展实现时直接退出, 避免空集合遍历
         if (rpcHooks == null || rpcHooks.isEmpty()) {
             return;
         }
+        // 逐个注册到服务端 RPCHook 链路, 使所有请求统一经过 hook 回调
         for (RPCHook rpcHook : rpcHooks) {
             this.registerServerRPCHook(rpcHook);
         }
     }
 
+    /**
+     * 初始化请求处理流水线<br>
+     * 在启用认证配置时构建鉴权与认证管道, 统一拦截后续请求
+     */
     private void initialRequestPipeline() {
         if (this.authConfig == null) {
             return;
@@ -1065,6 +1557,8 @@ public class BrokerController {
         };
         // add pipeline
         // the last pipe add will execute at the first
+        // 添加 pipeline
+        // 最后添加的管道最先执行
         try {
             pipeline = pipeline.pipe(new AuthorizationPipeline(authConfig))
                 .pipe(new AuthenticationPipeline(authConfig));
@@ -1074,13 +1568,16 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 注册请求处理器<br>
+     * 将各类 RequestCode 绑定到对应处理器与线程池<br>
+     * 同步完成 TCP 通道与 Fast 通道注册, 并初始化请求头映射表
+     */
     public void registerProcessor() {
         RemotingServer remotingServer = remotingServerMap.get(TCP_REMOTING_SERVER);
         RemotingServer fastRemotingServer = remotingServerMap.get(FAST_REMOTING_SERVER);
 
-        /*
-         * SendMessageProcessor
-         */
+        // SendMessageProcessor 发送消息处理器
         sendMessageProcessor.registerSendMessageHook(sendMessageHookList);
         sendMessageProcessor.registerConsumeMessageHook(consumeMessageHookList);
 
@@ -1094,48 +1591,33 @@ public class BrokerController {
         fastRemotingServer.registerProcessor(RequestCode.SEND_BATCH_MESSAGE, sendMessageProcessor, this.sendMessageExecutor);
         fastRemotingServer.registerProcessor(RequestCode.CONSUMER_SEND_MSG_BACK, sendMessageProcessor, this.sendMessageExecutor);
         fastRemotingServer.registerProcessor(RequestCode.RECALL_MESSAGE, recallMessageProcessor, this.sendMessageExecutor);
-        /**
-         * PullMessageProcessor
-         */
+
+        // PullMessageProcessor 拉消息处理器
         remotingServer.registerProcessor(RequestCode.PULL_MESSAGE, this.pullMessageProcessor, this.pullMessageExecutor);
         remotingServer.registerProcessor(RequestCode.LITE_PULL_MESSAGE, this.pullMessageProcessor, this.litePullMessageExecutor);
         this.pullMessageProcessor.registerConsumeMessageHook(consumeMessageHookList);
-        /**
-         * PeekMessageProcessor
-         */
+        // PeekMessageProcessor 窥探消息处理器
         remotingServer.registerProcessor(RequestCode.PEEK_MESSAGE, this.peekMessageProcessor, this.pullMessageExecutor);
-        /**
-         * PopMessageProcessor
-         */
+        // PopMessageProcessor POP 消息处理器
         remotingServer.registerProcessor(RequestCode.POP_MESSAGE, this.popMessageProcessor, this.pullMessageExecutor);
+        // fastRemotingServer 未注册 PullMessageProcessor, PeekMessageProcessor, PopMessageProcessor
 
-        /**
-         * AckMessageProcessor
-         */
+        // AckMessageProcessor ACK 消息处理器
         remotingServer.registerProcessor(RequestCode.ACK_MESSAGE, this.ackMessageProcessor, this.ackMessageExecutor);
         fastRemotingServer.registerProcessor(RequestCode.ACK_MESSAGE, this.ackMessageProcessor, this.ackMessageExecutor);
 
         remotingServer.registerProcessor(RequestCode.BATCH_ACK_MESSAGE, this.ackMessageProcessor, this.ackMessageExecutor);
         fastRemotingServer.registerProcessor(RequestCode.BATCH_ACK_MESSAGE, this.ackMessageProcessor, this.ackMessageExecutor);
-        /**
-         * ChangeInvisibleTimeProcessor
-         */
+        // ChangeInvisibleTimeProcessor 修改不可见时间处理器
         remotingServer.registerProcessor(RequestCode.CHANGE_MESSAGE_INVISIBLETIME, this.changeInvisibleTimeProcessor, this.ackMessageExecutor);
         fastRemotingServer.registerProcessor(RequestCode.CHANGE_MESSAGE_INVISIBLETIME, this.changeInvisibleTimeProcessor, this.ackMessageExecutor);
-        /**
-         * notificationProcessor
-         */
+        // notificationProcessor 通知处理器
         remotingServer.registerProcessor(RequestCode.NOTIFICATION, this.notificationProcessor, this.pullMessageExecutor);
 
-        /**
-         * pollingInfoProcessor
-         */
+        // pollingInfoProcessor 轮询信息处理器
         remotingServer.registerProcessor(RequestCode.POLLING_INFO, this.pollingInfoProcessor, this.pullMessageExecutor);
 
-        /**
-         * ReplyMessageProcessor
-         */
-
+        // ReplyMessageProcessor 回复消息处理器
         replyMessageProcessor.registerSendMessageHook(sendMessageHookList);
 
         remotingServer.registerProcessor(RequestCode.SEND_REPLY_MESSAGE, replyMessageProcessor, replyMessageExecutor);
@@ -1143,9 +1625,7 @@ public class BrokerController {
         fastRemotingServer.registerProcessor(RequestCode.SEND_REPLY_MESSAGE, replyMessageProcessor, replyMessageExecutor);
         fastRemotingServer.registerProcessor(RequestCode.SEND_REPLY_MESSAGE_V2, replyMessageProcessor, replyMessageExecutor);
 
-        /**
-         * QueryMessageProcessor
-         */
+        // QueryMessageProcessor 查询消息处理器
         NettyRequestProcessor queryProcessor = new QueryMessageProcessor(this);
         remotingServer.registerProcessor(RequestCode.QUERY_MESSAGE, queryProcessor, this.queryMessageExecutor);
         remotingServer.registerProcessor(RequestCode.VIEW_MESSAGE_BY_ID, queryProcessor, this.queryMessageExecutor);
@@ -1153,9 +1633,7 @@ public class BrokerController {
         fastRemotingServer.registerProcessor(RequestCode.QUERY_MESSAGE, queryProcessor, this.queryMessageExecutor);
         fastRemotingServer.registerProcessor(RequestCode.VIEW_MESSAGE_BY_ID, queryProcessor, this.queryMessageExecutor);
 
-        /**
-         * ClientManageProcessor
-         */
+        // ClientManageProcessor 客户端管理处理器
         remotingServer.registerProcessor(RequestCode.HEART_BEAT, clientManageProcessor, this.heartbeatExecutor);
         remotingServer.registerProcessor(RequestCode.UNREGISTER_CLIENT, clientManageProcessor, this.clientManageExecutor);
         remotingServer.registerProcessor(RequestCode.CHECK_CLIENT_CONFIG, clientManageProcessor, this.clientManageExecutor);
@@ -1164,9 +1642,7 @@ public class BrokerController {
         fastRemotingServer.registerProcessor(RequestCode.UNREGISTER_CLIENT, clientManageProcessor, this.clientManageExecutor);
         fastRemotingServer.registerProcessor(RequestCode.CHECK_CLIENT_CONFIG, clientManageProcessor, this.clientManageExecutor);
 
-        /**
-         * ConsumerManageProcessor
-         */
+        // ConsumerManageProcessor 消费者管理处理器
         ConsumerManageProcessor consumerManageProcessor = new ConsumerManageProcessor(this);
         remotingServer.registerProcessor(RequestCode.GET_CONSUMER_LIST_BY_GROUP, consumerManageProcessor, this.consumerManageExecutor);
         remotingServer.registerProcessor(RequestCode.UPDATE_CONSUMER_OFFSET, consumerManageProcessor, this.consumerManageExecutor);
@@ -1176,30 +1652,22 @@ public class BrokerController {
         fastRemotingServer.registerProcessor(RequestCode.UPDATE_CONSUMER_OFFSET, consumerManageProcessor, this.consumerManageExecutor);
         fastRemotingServer.registerProcessor(RequestCode.QUERY_CONSUMER_OFFSET, consumerManageProcessor, this.consumerManageExecutor);
 
-        /**
-         * QueryAssignmentProcessor
-         */
+        // QueryAssignmentProcessor 查询分配处理器
         remotingServer.registerProcessor(RequestCode.QUERY_ASSIGNMENT, queryAssignmentProcessor, loadBalanceExecutor);
         fastRemotingServer.registerProcessor(RequestCode.QUERY_ASSIGNMENT, queryAssignmentProcessor, loadBalanceExecutor);
         remotingServer.registerProcessor(RequestCode.SET_MESSAGE_REQUEST_MODE, queryAssignmentProcessor, loadBalanceExecutor);
         fastRemotingServer.registerProcessor(RequestCode.SET_MESSAGE_REQUEST_MODE, queryAssignmentProcessor, loadBalanceExecutor);
 
-        /**
-         * EndTransactionProcessor
-         */
+        // EndTransactionProcessor 结束事务处理器
         remotingServer.registerProcessor(RequestCode.END_TRANSACTION, endTransactionProcessor, this.endTransactionExecutor);
         fastRemotingServer.registerProcessor(RequestCode.END_TRANSACTION, endTransactionProcessor, this.endTransactionExecutor);
 
-        /*
-         * Default
-         */
+        // Default 默认处理器
         AdminBrokerProcessor adminProcessor = new AdminBrokerProcessor(this);
         remotingServer.registerDefaultProcessor(adminProcessor, this.adminBrokerExecutor);
         fastRemotingServer.registerDefaultProcessor(adminProcessor, this.adminBrokerExecutor);
 
-        /*
-         * Initialize the mapping of request codes to request headers.
-         */
+        // Initialize the mapping of request codes to request headers. 初始化请求码与请求头映射
         RequestHeaderRegistry.getInstance().initialize();
     }
 
@@ -1211,6 +1679,9 @@ public class BrokerController {
         this.brokerStats = brokerStats;
     }
 
+    /**
+     * 执行 Broker 保护检查
+     */
     public void protectBroker() {
         if (this.brokerConfig.isDisableConsumeIfConsumerReadSlowly()) {
             for (Map.Entry<String, MomentStatsItem> next : this.brokerStatsManager.getMomentStatsItemSetFallSize().getStatsItemTable().entrySet()) {
@@ -1225,6 +1696,9 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 计算队列头任务等待时长
+     */
     public long headSlowTimeMills(BlockingQueue<Runnable> q) {
         long slowTimeMills = 0;
         final Runnable peek = q.peek();
@@ -1240,42 +1714,72 @@ public class BrokerController {
         return slowTimeMills;
     }
 
+    /**
+     * 计算发送队列头等待时长
+     */
     public long headSlowTimeMills4SendThreadPoolQueue() {
         return this.headSlowTimeMills(this.sendThreadPoolQueue);
     }
 
+    /**
+     * 计算拉取队列头等待时长
+     */
     public long headSlowTimeMills4PullThreadPoolQueue() {
         return this.headSlowTimeMills(this.pullThreadPoolQueue);
     }
 
+    /**
+     * 计算轻量拉取队列头等待时长
+     */
     public long headSlowTimeMills4LitePullThreadPoolQueue() {
         return this.headSlowTimeMills(this.litePullThreadPoolQueue);
     }
 
+    /**
+     * 计算查询队列头等待时长
+     */
     public long headSlowTimeMills4QueryThreadPoolQueue() {
         return this.headSlowTimeMills(this.queryThreadPoolQueue);
     }
 
+    /**
+     * 计算 ACK 队列头等待时长
+     */
     public long headSlowTimeMills4AckThreadPoolQueue() {
         return this.headSlowTimeMills(this.ackThreadPoolQueue);
     }
 
+    /**
+     * 计算结束事务队列头等待时长
+     */
     public long headSlowTimeMills4EndTransactionThreadPoolQueue() {
         return this.headSlowTimeMills(this.endTransactionThreadPoolQueue);
     }
 
+    /**
+     * 计算客户端管理队列头等待时长
+     */
     public long headSlowTimeMills4ClientManagerThreadPoolQueue() {
         return this.headSlowTimeMills(this.clientManagerThreadPoolQueue);
     }
 
+    /**
+     * 计算心跳队列头等待时长
+     */
     public long headSlowTimeMills4HeartbeatThreadPoolQueue() {
         return this.headSlowTimeMills(this.heartbeatThreadPoolQueue);
     }
 
+    /**
+     * 计算管理队列头等待时长
+     */
     public long headSlowTimeMills4AdminBrokerThreadPoolQueue() {
         return this.headSlowTimeMills(this.adminBrokerThreadPoolQueue);
     }
 
+    /**
+     * 打印线程池水位信息
+     */
     public void printWaterMark() {
         logWaterMarkQueueInfo("Send", this.sendThreadPoolQueue, this::headSlowTimeMills4SendThreadPoolQueue);
         logWaterMarkQueueInfo("Pull", this.pullThreadPoolQueue, this::headSlowTimeMills4PullThreadPoolQueue);
@@ -1288,6 +1792,9 @@ public class BrokerController {
         logWaterMarkQueueInfo("Admin", this.adminBrokerThreadPoolQueue, this::headSlowTimeMills4AdminBrokerThreadPoolQueue);
     }
 
+    /**
+     * 记录队列水位信息
+     */
     private void logWaterMarkQueueInfo(String queueName, BlockingQueue<?> queue, Supplier<Long> slowTimeSupplier) {
         LOG_WATER_MARK.info("[WATERMARK] {} Queue Size: {} SlowTimeMills: {}", queueName, queue.size(), slowTimeSupplier.get());
     }
@@ -1300,6 +1807,9 @@ public class BrokerController {
         this.messageStore = messageStore;
     }
 
+    /**
+     * 打印主从差值
+     */
     protected void printMasterAndSlaveDiff() {
         if (messageStore.getHaService() != null && messageStore.getHaService().getConnectionCount().get() > 0) {
             long diff = this.messageStore.slaveFallBehindMuch();
@@ -1392,6 +1902,11 @@ public class BrokerController {
         return changeInvisibleTimeProcessor;
     }
 
+    /**
+     * 关闭基础服务<br>
+     * 先下线路由再按依赖顺序关闭网络, 存储, 线程池与后台服务<br>
+     * 关闭过程中持久化关键元数据, 保证下次启动可恢复
+     */
     protected void shutdownBasicService() {
 
         shutdown = true;
@@ -1461,6 +1976,7 @@ public class BrokerController {
             this.topicQueueMappingCleanService.shutdown();
         }
         //it is better to make sure the timerMessageStore shutdown firstly
+        // 最好优先确保 timerMessageStore 先关闭
         if (this.timerMessageStore != null) {
             this.timerMessageStore.shutdown();
         }
@@ -1613,6 +2129,9 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 关闭 Broker 控制器
+     */
     public void shutdown() {
 
         shutdownBasicService();
@@ -1626,6 +2145,9 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 关闭定时执行器
+     */
     protected void shutdownScheduledExecutorService(ScheduledExecutorService scheduledExecutorService) {
         if (scheduledExecutorService == null) {
             return;
@@ -1639,6 +2161,9 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 下线全部 broker 注册信息
+     */
     protected void unregisterBrokerAll() {
         this.brokerOuterAPI.unregisterBrokerAll(
             this.brokerConfig.getBrokerClusterName(),
@@ -1651,6 +2176,12 @@ public class BrokerController {
         return this.brokerConfig.getBrokerIP1() + ":" + this.nettyServerConfig.getListenPort();
     }
 
+    /**
+     * 启动基础服务<br>
+     * 按依赖顺序启动存储, remoting, 插件与后台任务, 并刷新 storeHost 信息
+     *
+     * @throws Exception 任一核心组件启动失败时抛出
+     */
     protected void startBasicService() throws Exception {
 
         if (this.messageStore != null) {
@@ -1676,6 +2207,7 @@ public class BrokerController {
 
                 if (TCP_REMOTING_SERVER.equals(entry.getKey())) {
                     // In test scenarios where it is up to OS to pick up an available port, set the listening port back to config
+                    // 在测试场景中由 OS 分配可用端口时, 需要回写监听端口到配置
                     if (null != nettyServerConfig && 0 == nettyServerConfig.getListenPort()) {
                         nettyServerConfig.setListenPort(remotingServer.localListenPort());
                     }
@@ -1762,37 +2294,56 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 启动 Broker 控制器<br>
+     * 启动基础组件后建立周期注册, 心跳, 成员同步与元数据刷新任务<br>
+     * 在主从切换模式下按隔离状态决定是否立即对外注册
+     *
+     * @throws Exception 基础服务启动失败时抛出
+     */
     public void start() throws Exception {
 
+        // 计算可对外注册时间点, 启动保护期内先不向 NameServer 暴露路由
         this.shouldStartTime = System.currentTimeMillis() + messageStoreConfig.getDisappearTimeAfterStart();
 
+        // 多副本 slave acting master 模式下先进入隔离态, 等待成员组选主完成
         if (messageStoreConfig.getTotalReplicas() > 1 && this.brokerConfig.isEnableSlaveActingMaster()) {
             isIsolated = true;
         }
 
+        // 后续注册与心跳都依赖 brokerOuterAPI, 因此优先启动
         if (this.brokerOuterAPI != null) {
             this.brokerOuterAPI.start();
         }
 
+        // 启动存储, remoting, 线程池等基础能力
         startBasicService();
 
+        // 非隔离且非 DLedger 与非双写复制场景下, 启动时立即强制注册一次
         if (!isIsolated && !this.messageStoreConfig.isEnableDLegerCommitLog() && !this.messageStoreConfig.isDuplicationEnable()) {
             changeSpecialServiceStatus(this.brokerConfig.getBrokerId() == MixAll.MASTER_ID);
             this.registerBrokerAll(true, false, true);
         }
 
+        /*
+         * 周期注册任务
+         * 启动保护期内延后注册, 隔离状态下跳过注册, 否则按周期刷新路由数据
+         */
         scheduledFutures.add(this.scheduledExecutorService.scheduleAtFixedRate(new AbstractBrokerRunnable(this.getBrokerIdentity()) {
             @Override
             public void run0() {
                 try {
+                    // 启动保护期内不注册, 避免冷启动阶段路由抖动
                     if (System.currentTimeMillis() < shouldStartTime) {
                         BrokerController.LOG.info("Register to namesrv after {}", shouldStartTime);
                         return;
                     }
+                    // 隔离态 broker 不对外注册, 等待角色收敛后再暴露路由
                     if (isIsolated) {
                         BrokerController.LOG.info("Skip register for broker is isolated");
                         return;
                     }
+                    // 执行周期注册, 是否强制注册由配置控制
                     BrokerController.this.registerBrokerAll(true, false, brokerConfig.isForceRegister());
                 } catch (Throwable e) {
                     BrokerController.LOG.error("registerBrokerAll Exception", e);
@@ -1800,6 +2351,11 @@ public class BrokerController {
             }
         }, 1000 * 10, Math.max(10000, Math.min(brokerConfig.getRegisterNameServerPeriod(), 60000)), TimeUnit.MILLISECONDS));
 
+        /*
+         * slave acting master 模式下需要并行维护
+         * 1. 发送心跳维持在线状态
+         * 2. 同步成员组驱动最小 broker 切换
+         */
         if (this.brokerConfig.isEnableSlaveActingMaster()) {
             scheduleSendHeartbeat();
 
@@ -1807,6 +2363,7 @@ public class BrokerController {
                 @Override
                 public void run0() {
                     try {
+                        // 同步成员信息后将触发最小 broker 更新与角色切换逻辑
                         BrokerController.this.syncBrokerMemberGroup();
                     } catch (Throwable e) {
                         BrokerController.LOG.error("sync BrokerMemberGroup error. ", e);
@@ -1815,14 +2372,17 @@ public class BrokerController {
             }, 1000, this.brokerConfig.getSyncBrokerMemberGroupPeriod(), TimeUnit.MILLISECONDS));
         }
 
+        // controller 模式同样需要独立心跳任务, 用于向 controller 报活
         if (this.brokerConfig.isEnableControllerMode()) {
             scheduleSendHeartbeat();
         }
 
+        // 跳过预上线时直接启动特殊服务并完成一次注册
         if (brokerConfig.isSkipPreOnline()) {
             startServiceWithoutCondition();
         }
 
+        // 周期刷新元数据, 降低鉴权与路由缓存陈旧风险
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -1835,6 +2395,10 @@ public class BrokerController {
         }, 10, 5, TimeUnit.SECONDS);
     }
 
+    /**
+     * 调度心跳发送任务<br>
+     * 按固定间隔发送 broker 心跳, 隔离状态下自动跳过发送
+     */
     protected void scheduleSendHeartbeat() {
         scheduledFutures.add(this.brokerHeartbeatExecutorService.scheduleAtFixedRate(new AbstractBrokerRunnable(this.getBrokerIdentity()) {
             @Override
@@ -1852,21 +2416,31 @@ public class BrokerController {
         }, 1000, brokerConfig.getBrokerHeartbeatInterval(), TimeUnit.MILLISECONDS));
     }
 
+    /**
+     * 注册单主题路由
+     */
     public synchronized void registerSingleTopicAll(final TopicConfig topicConfig) {
         TopicConfig tmpTopic = topicConfig;
         if (!PermName.isWriteable(this.getBrokerConfig().getBrokerPermission())
             || !PermName.isReadable(this.getBrokerConfig().getBrokerPermission())) {
             // Copy the topic config and modify the perm
+            // 复制主题配置并修改权限
             tmpTopic = new TopicConfig(topicConfig);
             tmpTopic.setPerm(topicConfig.getPerm() & this.brokerConfig.getBrokerPermission());
         }
         this.brokerOuterAPI.registerSingleTopicAll(this.brokerConfig.getBrokerName(), tmpTopic, 3000);
     }
 
+    /**
+     * 增量注册 broker 数据
+     */
     public synchronized void registerIncrementBrokerData(TopicConfig topicConfig, DataVersion dataVersion) {
         this.registerIncrementBrokerData(Collections.singletonList(topicConfig), dataVersion);
     }
 
+    /**
+     * 增量注册 broker 数据
+     */
     public synchronized void registerIncrementBrokerData(List<TopicConfig> topicConfigList, DataVersion dataVersion) {
         if (topicConfigList == null || topicConfigList.isEmpty()) {
             return;
@@ -1908,6 +2482,15 @@ public class BrokerController {
         doRegisterBrokerAll(true, false, topicConfigSerializeWrapper);
     }
 
+    /**
+     * 注册全部 broker 数据<br>
+     * 将当前主题配置与队列映射打包后上报到 NameServer<br>
+     * 在开启分片注册时按批次拆分发送, 否则依据 needRegister 判定是否发送全量数据
+     *
+     * @param checkOrderConfig true 表示注册后同步顺序主题配置
+     * @param oneway true 表示单向注册, 不等待返回结果
+     * @param forceRegister true 表示忽略变更检测强制注册
+     */
     public synchronized void registerBrokerAll(final boolean checkOrderConfig, boolean oneway, boolean forceRegister) {
         ConcurrentMap<String, TopicConfig> topicConfigMap = this.getTopicConfigManager().getTopicConfigTable();
         ConcurrentHashMap<String, TopicConfig> topicConfigTable = new ConcurrentHashMap<>();
@@ -1946,6 +2529,14 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 执行 broker 注册调用<br>
+     * 组装注册参数并调用 BrokerOuterAPI 完成远端注册, 随后处理注册返回结果
+     *
+     * @param checkOrderConfig true 表示需要更新顺序主题配置
+     * @param oneway true 表示单向注册
+     * @param topicConfigWrapper 待注册的主题配置快照
+     */
     protected void doRegisterBrokerAll(boolean checkOrderConfig, boolean oneway,
         TopicConfigSerializeWrapper topicConfigWrapper) {
 
@@ -1971,6 +2562,11 @@ public class BrokerController {
         handleRegisterBrokerResult(registerBrokerResultList, checkOrderConfig);
     }
 
+    /**
+     * 发送 broker 心跳<br>
+     * controller 模式下先向 controller 上报存活信息<br>
+     * 从节点代理主节点模式下再向 NameServer 发送心跳或数据版本心跳
+     */
     protected void sendHeartbeat() {
         if (this.brokerConfig.isEnableControllerMode()) {
             this.replicasManager.sendHeartbeatToController();
@@ -1998,6 +2594,11 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 同步 broker 成员组信息<br>
+     * 从 NameServer 拉取同名 broker 组成员后更新存活副本数<br>
+     * 非隔离状态下根据最小 brokerId 触发服务角色切换
+     */
     protected void syncBrokerMemberGroup() {
         try {
             brokerMemberGroup = this.getBrokerOuterAPI()
@@ -2018,6 +2619,9 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 计算组内存活 broker 数量
+     */
     private int calcAliveBrokerNumInGroup(Map<Long, String> brokerAddrTable) {
         if (brokerAddrTable.containsKey(this.brokerConfig.getBrokerId())) {
             return brokerAddrTable.size();
@@ -2026,6 +2630,13 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 处理 broker 注册结果<br>
+     * 根据 NameServer 返回结果更新主节点地址, 同步主从状态并按需刷新顺序主题配置
+     *
+     * @param registerBrokerResultList 注册返回结果列表
+     * @param checkOrderConfig true 表示需要更新顺序主题配置
+     */
     protected void handleRegisterBrokerResult(List<RegisterBrokerResult> registerBrokerResultList,
         boolean checkOrderConfig) {
         for (RegisterBrokerResult registerBrokerResult : registerBrokerResultList) {
@@ -2044,6 +2655,18 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 判断是否需要执行全量注册<br>
+     * 通过 NameServer 返回的变更标记判断本地主题配置是否需要重新上报
+     *
+     * @param clusterName 集群名称
+     * @param brokerAddr broker 地址
+     * @param brokerName broker 名称
+     * @param brokerId broker 标识
+     * @param timeoutMills 请求超时时间, 单位毫秒
+     * @param isInBrokerContainer broker 是否运行在容器模式
+     * @return true 表示至少一个 NameServer 认为配置发生变更
+     */
     private boolean needRegister(final String clusterName,
         final String brokerAddr,
         final String brokerName,
@@ -2063,6 +2686,9 @@ public class BrokerController {
         return needRegister;
     }
 
+    /**
+     * 按条件启动服务
+     */
     public void startService(long minBrokerId, String minBrokerAddr) {
         BrokerController.LOG.info("{} start service, min broker id is {}, min broker addr: {}",
             this.brokerConfig.getCanonicalName(), minBrokerId, minBrokerAddr);
@@ -2075,6 +2701,9 @@ public class BrokerController {
         isIsolated = false;
     }
 
+    /**
+     * 无条件启动服务
+     */
     public void startServiceWithoutCondition() {
         BrokerController.LOG.info("{} start service", this.brokerConfig.getCanonicalName());
 
@@ -2084,6 +2713,9 @@ public class BrokerController {
         isIsolated = false;
     }
 
+    /**
+     * 停止服务
+     */
     public void stopService() {
         BrokerController.LOG.info("{} stop service", this.getBrokerConfig().getCanonicalName());
         isIsolated = true;
@@ -2098,18 +2730,26 @@ public class BrokerController {
         return this.ackMessageProcessor != null && this.ackMessageProcessor.isPopReviveServiceRunning();
     }
 
+    /**
+     * 处理主节点下线
+     */
     private void onMasterOffline() {
         // close channels with master broker
+        // 关闭与主 broker 的连接
         String masterAddr = this.slaveSynchronize.getMasterAddr();
         if (masterAddr != null) {
             this.brokerOuterAPI.getRemotingClient().closeChannels(
                 Arrays.asList(masterAddr, MixAll.brokerVIPChannel(true, masterAddr)));
         }
         // master not available, stop sync
+        // 主节点不可用时停止同步
         this.slaveSynchronize.setMasterAddr(null);
         this.messageStore.updateHaMasterAddress(null);
     }
 
+    /**
+     * 处理主节点上线
+     */
     private void onMasterOnline(String masterAddr, String masterHaAddr) {
         boolean needSyncMasterFlushOffset = this.messageStore.getMasterFlushedOffset() == 0
             && this.messageStoreConfig.isSyncMasterFlushOffsetWhenStartup();
@@ -2132,14 +2772,25 @@ public class BrokerController {
         }
 
         // set master HA address.
+        // 设置主节点 HA 地址
         if (masterHaAddr != null) {
             this.messageStore.updateHaMasterAddress(masterHaAddr);
         }
 
         // wakeup HAClient
+        // 唤醒 HAClient
         this.messageStore.wakeupHAClient();
     }
 
+    /**
+     * 处理最小 broker 变更事件<br>
+     * 更新本地最小节点视图后切换特殊服务状态, 并根据上下线信息调整主从同步链路
+     *
+     * @param minBrokerId 变更后的最小 brokerId
+     * @param minBrokerAddr 变更后的最小 broker 地址
+     * @param offlineBrokerAddr 本轮检测判定下线的 broker 地址, 可为 null
+     * @param masterHaAddr 主节点 HA 地址, 可为 null
+     */
     private void onMinBrokerChange(long minBrokerId, String minBrokerAddr, String offlineBrokerAddr,
         String masterHaAddr) {
         LOG.info("Min broker changed, old: {}-{}, new {}-{}",
@@ -2152,20 +2803,30 @@ public class BrokerController {
 
         if (offlineBrokerAddr != null && offlineBrokerAddr.equals(this.slaveSynchronize.getMasterAddr())) {
             // master offline
+            // 主节点下线
             onMasterOffline();
         }
 
         if (minBrokerId == MixAll.MASTER_ID && minBrokerAddr != null) {
             // master online
+            // 主节点上线
             onMasterOnline(minBrokerAddr, masterHaAddr);
         }
 
         // notify PullRequest on hold to pull from master.
+        // 通知挂起 PullRequest 从主节点拉取
         if (this.minBrokerIdInGroup == MixAll.MASTER_ID) {
             this.pullRequestHoldService.notifyMasterOnline();
         }
     }
 
+    /**
+     * 更新组内最小 broker 信息<br>
+     * 使用非阻塞锁快速更新本地最小节点视图, 适用于周期同步场景
+     *
+     * @param minBrokerId 当前组内最小 brokerId
+     * @param minBrokerAddr 最小 broker 对应地址
+     */
     public void updateMinBroker(long minBrokerId, String minBrokerAddr) {
         if (brokerConfig.isEnableSlaveActingMaster() && brokerConfig.getBrokerId() != MixAll.MASTER_ID) {
             if (lock.tryLock()) {
@@ -2184,6 +2845,15 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 更新组内最小 broker 信息<br>
+     * 使用带超时锁执行角色切换, 支持显式传入下线节点与主节点 HA 地址
+     *
+     * @param minBrokerId 当前组内最小 brokerId
+     * @param minBrokerAddr 最小 broker 对应地址
+     * @param offlineBrokerAddr 已下线 broker 地址, 可为 null
+     * @param masterHaAddr 主节点 HA 地址, 可为 null
+     */
     public void updateMinBroker(long minBrokerId, String minBrokerAddr, String offlineBrokerAddr,
         String masterHaAddr) {
         if (brokerConfig.isEnableSlaveActingMaster() && brokerConfig.getBrokerId() != MixAll.MASTER_ID) {
@@ -2204,6 +2874,12 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 变更特殊服务状态<br>
+     * 统一切换仅主节点可运行的服务状态, 包括定时消息, 事务回查与 PopRevive
+     *
+     * @param shouldStart true 表示启动特殊服务, false 表示关闭
+     */
     public void changeSpecialServiceStatus(boolean shouldStart) {
 
         for (BrokerAttachedPlugin brokerAttachedPlugin : brokerAttachedPlugins) {
@@ -2222,6 +2898,12 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 变更事务回查服务状态<br>
+     * 状态发生变化时再执行启动或关闭, 避免重复切换
+     *
+     * @param shouldStart true 表示启动事务回查服务
+     */
     private synchronized void changeTransactionCheckServiceStatus(boolean shouldStart) {
         if (isTransactionCheckServiceStart != shouldStart) {
             LOG.info("TransactionCheckService status changed to {}", shouldStart);
@@ -2234,6 +2916,12 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 变更定时服务状态<br>
+     * 同步维护 scheduleMessageService 与 timerMessageStore 的运行状态
+     *
+     * @param shouldStart true 表示启动定时服务
+     */
     public synchronized void changeScheduleServiceStatus(boolean shouldStart) {
         if (isScheduleServiceStart != shouldStart) {
             LOG.info("ScheduleServiceStatus changed to {}", shouldStart);
@@ -2258,6 +2946,11 @@ public class BrokerController {
         return null;
     }
 
+    /**
+     * 获取节点身份信息<br>
+     * 包含集群名称, broker 名称, brokerId 与容器模式标识, 供注册与心跳使用<br>
+     * 在开启 DLegerCommitLog 时会从 dLegerSelfId 派生节点标识, 启动后再由角色切换流程维护 brokerId 的主从语义
+     */
     public BrokerIdentity getBrokerIdentity() {
         if (messageStoreConfig.isEnableDLegerCommitLog()) {
             return new BrokerIdentity(
@@ -2350,6 +3043,9 @@ public class BrokerController {
         return sendMessageHookList;
     }
 
+    /**
+     * 注册发送消息 Hook
+     */
     public void registerSendMessageHook(final SendMessageHook hook) {
         this.sendMessageHookList.add(hook);
         LOG.info("register SendMessageHook Hook, {}", hook.hookName());
@@ -2359,11 +3055,17 @@ public class BrokerController {
         return consumeMessageHookList;
     }
 
+    /**
+     * 注册消费消息 Hook
+     */
     public void registerConsumeMessageHook(final ConsumeMessageHook hook) {
         this.consumeMessageHookList.add(hook);
         LOG.info("register ConsumeMessageHook Hook, {}", hook.hookName());
     }
 
+    /**
+     * 注册服务端 RPC Hook
+     */
     public void registerServerRPCHook(RPCHook rpcHook) {
         for (Map.Entry<String, RemotingServer> entry : remotingServerMap.entrySet()) {
             RemotingServer remotingServer = entry.getValue();
@@ -2418,6 +3120,9 @@ public class BrokerController {
         this.remotingServerStartLatch = remotingServerStartLatch;
     }
 
+    /**
+     * 注册客户端 RPC Hook
+     */
     public void registerClientRPCHook(RPCHook rpcHook) {
         this.getBrokerOuterAPI().registerRPCHook(rpcHook);
     }
@@ -2513,6 +3218,9 @@ public class BrokerController {
         return this.brokerConfig.getBrokerId();
     }
 
+    /**
+     * 选择主 broker 地址
+     */
     public BrokerController peekMasterBroker() {
         return brokerConfig.getBrokerId() == MixAll.MASTER_ID ? this : null;
     }

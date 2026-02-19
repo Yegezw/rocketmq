@@ -25,18 +25,54 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.store.MessageFilter;
 
+/**
+ * POP 长轮询请求封装, 持有唤醒执行与过滤匹配所需上下文
+ */
 public class PopRequest {
+    /**
+     * 全局递增序号, 用于在过期时间相同场景下保证排序稳定
+     */
     private static final AtomicLong COUNTER = new AtomicLong(Long.MIN_VALUE);
 
+    /**
+     * 原始 POP 请求命令
+     */
     private final RemotingCommand remotingCommand;
+    /**
+     * Netty 上下文, 用于后续异步回写响应
+     */
     private final ChannelHandlerContext ctx;
+    /**
+     * 请求完成标记, 防止重复唤醒
+     */
     private final AtomicBoolean complete = new AtomicBoolean(false);
+    /**
+     * 当前请求的序号, 用于并发集合排序去重
+     */
     private final long op = COUNTER.getAndIncrement();
 
+    /**
+     * 请求过期时间戳
+     */
     private final long expired;
+    /**
+     * 订阅信息快照, 用于消费过滤判断
+     */
     private final SubscriptionData subscriptionData;
+    /**
+     * 消息过滤器实例
+     */
     private final MessageFilter messageFilter;
 
+    /**
+     * 创建 POP 挂起请求
+     *
+     * @param remotingCommand 原始请求命令
+     * @param ctx 网络上下文
+     * @param expired 请求过期时间戳
+     * @param subscriptionData 订阅数据
+     * @param messageFilter 消息过滤器
+     */
     public PopRequest(RemotingCommand remotingCommand, ChannelHandlerContext ctx,
         long expired, SubscriptionData subscriptionData, MessageFilter messageFilter) {
 
@@ -63,6 +99,11 @@ public class PopRequest {
         return System.currentTimeMillis() > (expired - 50);
     }
 
+    /**
+     * 原子化完成请求, 仅允许首次调用成功
+     *
+     * @return 首次完成返回 true, 其余返回 false
+     */
     public boolean complete() {
         return complete.compareAndSet(false, true);
     }
@@ -79,6 +120,11 @@ public class PopRequest {
         return messageFilter;
     }
 
+    /**
+     * 输出请求关键字段, 便于排查长轮询问题
+     *
+     * @return 当前请求字符串描述
+     */
     @Override
     public String toString() {
         final StringBuilder sb = new StringBuilder("PopRequest{");
@@ -91,6 +137,9 @@ public class PopRequest {
         return sb.toString();
     }
 
+    /**
+     * 挂起请求排序器, 先按过期时间再按序号排序
+     */
     public static final Comparator<PopRequest> COMPARATOR = (o1, o2) -> {
         int ret = (int) (o1.getExpired() - o2.getExpired());
 

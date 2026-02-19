@@ -16,10 +16,28 @@
  */
 package org.apache.rocketmq.broker.mqtrace;
 
+/**
+ * 发送消息钩子接口, 用于在发送前后扩展追踪与统计逻辑
+ */
 public interface SendMessageHook {
+    /**
+     * 返回钩子名称, 用于日志与诊断输出
+     *
+     * @return 钩子名称
+     */
     String hookName();
 
+    /**
+     * 发送前回调, 可读取请求上下文并挂载扩展信息
+     *
+     * @param context 发送上下文
+     */
     void sendMessageBefore(final SendMessageContext context);
 
+    /**
+     * 发送后回调, 可根据发送结果补充统计与追踪数据
+     *
+     * @param context 发送上下文
+     */
     void sendMessageAfter(final SendMessageContext context);
 }

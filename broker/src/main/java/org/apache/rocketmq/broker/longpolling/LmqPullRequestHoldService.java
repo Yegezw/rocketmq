@@ -22,9 +22,20 @@ import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 
+/**
+ * 轻量消息队列专用 Pull 挂起服务, 在轮询检查时回收空闲 LMQ 键
+ */
 public class LmqPullRequestHoldService extends PullRequestHoldService {
+    /**
+     * LMQ 挂起服务日志器
+     */
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
 
+    /**
+     * 创建 LMQ Pull 挂起服务
+     *
+     * @param brokerController broker 控制器
+     */
     public LmqPullRequestHoldService(BrokerController brokerController) {
         super(brokerController);
     }
@@ -37,6 +48,9 @@ public class LmqPullRequestHoldService extends PullRequestHoldService {
         return LmqPullRequestHoldService.class.getSimpleName();
     }
 
+    /**
+     * 遍历挂起请求表并触发唤醒检查, 同时清理无效 LMQ 条目
+     */
     @Override
     public void checkHoldRequest() {
         for (String key : pullRequestTable.keySet()) {

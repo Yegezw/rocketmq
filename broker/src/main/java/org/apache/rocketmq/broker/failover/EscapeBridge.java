@@ -55,22 +55,53 @@ import org.apache.rocketmq.store.PutMessageStatus;
 import org.apache.rocketmq.tieredstore.TieredMessageStore;
 
 public class EscapeBridge {
+    /**
+     * Broker 逃逸流程日志记录器, 用于输出远程转发和消息拉取诊断信息
+     */
     protected static final Logger LOG = LoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
+    /**
+     * 远程发送超时时间, 单位毫秒
+     */
     private static final long SEND_TIMEOUT = 3000L;
+    /**
+     * 远程拉消息默认超时时间, 单位毫秒
+     */
     private static final long DEFAULT_PULL_TIMEOUT_MILLIS = 1000 * 10L;
+    /**
+     * 内部生产者组名, 用于远程逃逸写入时标识来源
+     */
     private final String innerProducerGroupName;
+    /**
+     * 内部消费者组名, 用于逃逸读取消息时隔离内部拉取流量
+     */
     private final String innerConsumerGroupName;
 
+    /**
+     * Broker 控制器引用, 提供主从判定, 路由查询和外部 RPC 能力
+     */
     private final BrokerController brokerController;
 
+    /**
+     * 异步逃逸发送线程池, 仅在开启远程逃逸场景下初始化
+     */
     private ExecutorService defaultAsyncSenderExecutor;
 
+    /**
+     * 构建逃逸桥接器, 初始化内部生产和消费组标识
+     *
+     * @param brokerController broker 运行时上下文
+     */
     public EscapeBridge(BrokerController brokerController) {
         this.brokerController = brokerController;
         this.innerProducerGroupName = "InnerProducerGroup_" + brokerController.getBrokerConfig().getBrokerName() + "_" + brokerController.getBrokerConfig().getBrokerId();
         this.innerConsumerGroupName = "InnerConsumerGroup_" + brokerController.getBrokerConfig().getBrokerName() + "_" + brokerController.getBrokerConfig().getBrokerId();
     }
 
+    /**
+     * 启动逃逸桥接组件, 在可用配置下创建异步远程发送线程池
+     *
+     * @throws Exception 启动过程中的异常
+     */
     public void start() throws Exception {
         if (brokerController.getBrokerConfig().isEnableSlaveActingMaster() && brokerController.getBrokerConfig().isEnableRemoteEscape()) {
             final BlockingQueue<Runnable> asyncSenderThreadPoolQueue = new LinkedBlockingQueue<>(50000);
@@ -86,12 +117,21 @@ public class EscapeBridge {
         }
     }
 
+    /**
+     * 关闭逃逸桥接组件, 释放异步发送线程池资源
+     */
     public void shutdown() {
         if (null != this.defaultAsyncSenderExecutor) {
             this.defaultAsyncSenderExecutor.shutdown();
         }
     }
 
+    /**
+     * 同步写入消息, 优先写本地 master, 失败时按配置执行远程逃逸
+     *
+     * @param messageExt 待写入的 broker 内部消息
+     * @return 写入结果, 包含本地或远程写入状态
+     */
     public PutMessageResult putMessage(MessageExtBrokerInner messageExt) {
         BrokerController masterBroker = this.brokerController.peekMasterBroker();
         if (masterBroker != null) {
@@ -114,8 +154,16 @@ public class EscapeBridge {
         }
     }
 
+    /**
+     * 将消息转发到指定或自动选择的远端 broker
+     *
+     * @param messageExt 待转发消息
+     * @param brokerNameToSend 目标 broker 名称, 为空时自动选择
+     * @return 远端发送结果, 发送失败时返回 null
+     */
     public SendResult putMessageToRemoteBroker(MessageExtBrokerInner messageExt, String brokerNameToSend) {
         if (this.brokerController.getBrokerConfig().getBrokerName().equals(brokerNameToSend)) { // not remote broker
+            // 目标 broker 与当前节点一致, 无需执行远程逃逸
             return null;
         }
         final boolean isTransHalfMessage = TransactionalMessageUtil.buildHalfTopic().equals(messageExt.getTopic());
@@ -175,6 +223,12 @@ public class EscapeBridge {
         return null;
     }
 
+    /**
+     * 异步写入消息, 本地不可写时走远程逃逸异步链路
+     *
+     * @param messageExt 待写入消息
+     * @return 写入结果 Future, 调用方可异步等待结果
+     */
     public CompletableFuture<PutMessageResult> asyncPutMessage(MessageExtBrokerInner messageExt) {
         BrokerController masterBroker = this.brokerController.peekMasterBroker();
         if (masterBroker != null) {
@@ -211,6 +265,12 @@ public class EscapeBridge {
         }
     }
 
+    /**
+     * 提取消息中的生产者组, 缺失时回退到内部生产者组
+     *
+     * @param messageExt 目标消息
+     * @return 生产者组名
+     */
     private String getProducerGroup(MessageExtBrokerInner messageExt) {
         if (null == messageExt) {
             return this.innerProducerGroupName;
@@ -222,6 +282,12 @@ public class EscapeBridge {
         return producerGroup;
     }
 
+    /**
+     * 将消息写入特定队列, 同步等待远端发送结果
+     *
+     * @param messageExt 待写入消息
+     * @return 写入结果
+     */
     public PutMessageResult putMessageToSpecificQueue(MessageExtBrokerInner messageExt) {
         BrokerController masterBroker = this.brokerController.peekMasterBroker();
         if (masterBroker != null) {
@@ -235,6 +301,12 @@ public class EscapeBridge {
         }
     }
 
+    /**
+     * 异步写入特定队列, 本地 master 存在时直接走本地存储链路
+     *
+     * @param messageExt 待写入消息
+     * @return 异步写入结果
+     */
     public CompletableFuture<PutMessageResult> asyncPutMessageToSpecificQueue(MessageExtBrokerInner messageExt) {
         BrokerController masterBroker = this.brokerController.peekMasterBroker();
         if (masterBroker != null) {
@@ -243,6 +315,12 @@ public class EscapeBridge {
         return asyncRemotePutMessageToSpecificQueue(messageExt);
     }
 
+    /**
+     * 异步逃逸写入固定队列, 根据 topic 和存储主机哈希选择目标队列
+     *
+     * @param messageExt 待写入消息
+     * @return 异步写入结果
+     */
     public CompletableFuture<PutMessageResult> asyncRemotePutMessageToSpecificQueue(MessageExtBrokerInner messageExt) {
         if (this.brokerController.getBrokerConfig().isEnableSlaveActingMaster()
             && this.brokerController.getBrokerConfig().isEnableRemoteEscape()) {
@@ -278,6 +356,12 @@ public class EscapeBridge {
         }
     }
 
+    /**
+     * 将远程发送结果映射为存储层写入结果, 统一逃逸链路状态语义
+     *
+     * @param sendResult 远程发送结果
+     * @return 存储层写入结果
+     */
     private PutMessageResult transformSendResult2PutResult(SendResult sendResult) {
         if (sendResult == null) {
             return new PutMessageResult(PutMessageStatus.PUT_TO_REMOTE_BROKER_FAIL, null, true);
@@ -296,12 +380,33 @@ public class EscapeBridge {
         }
     }
 
+    /**
+     * 同步获取指定消息, 对异步查询接口做 join 封装
+     *
+     * @param topic 主题名
+     * @param offset 队列偏移量
+     * @param queueId 队列编号
+     * @param brokerName broker 名称
+     * @param deCompressBody 是否解压消息体
+     * @return 三元组: 消息体, 附加信息和是否建议重试
+     */
     public Triple<MessageExt, String, Boolean> getMessage(String topic, long offset, int queueId, String brokerName,
         boolean deCompressBody) {
         return getMessageAsync(topic, offset, queueId, brokerName, deCompressBody).join();
     }
 
     // Triple<MessageExt, info, needRetry>, check info and retry if and only if MessageExt is null
+    // 三元组语义: 消息体, 附加信息, 是否需要重试, 仅当消息为空时依据后两项判定
+    /**
+     * 异步读取指定消息, 优先读取本地存储, 未命中时回退到远端 broker
+     *
+     * @param topic 主题名
+     * @param offset 队列偏移量
+     * @param queueId 队列编号
+     * @param brokerName broker 名称
+     * @param deCompressBody 是否解压消息体
+     * @return 三元组: 消息体, 附加信息和是否建议重试
+     */
     public CompletableFuture<Triple<MessageExt, String, Boolean>> getMessageAsync(String topic, long offset,
         int queueId, String brokerName, boolean deCompressBody) {
         MessageStore messageStore = brokerController.getMessageStoreByBrokerName(brokerName);
@@ -310,11 +415,13 @@ public class EscapeBridge {
                 .thenApply(result -> {
                     if (result == null) {
                         LOG.warn("getMessageResult is null , innerConsumerGroupName {}, topic {}, offset {}, queueId {}", innerConsumerGroupName, topic, offset, queueId);
+                        // 本地存储读取失败通常不是瞬时网络问题, 不建议立即重试
                         return Triple.of(null, "getMessageResult is null", false); // local store, so no retry
                     }
                     List<MessageExt> list = decodeMsgList(result, deCompressBody);
                     if (list == null || list.isEmpty()) {
                         // OFFSET_FOUND_NULL returned by TieredMessageStore indicates exception occurred
+                        // TieredMessageStore 返回 OFFSET_FOUND_NULL 表示读取链路可能发生异常
                         boolean needRetry = GetMessageStatus.OFFSET_FOUND_NULL.equals(result.getStatus())
                             && messageStore instanceof TieredMessageStore;
                         LOG.warn("Can not get msg , topic {}, offset {}, queueId {}, needRetry {}, result is {}",
@@ -328,6 +435,13 @@ public class EscapeBridge {
         }
     }
 
+    /**
+     * 将存储层返回的消息缓冲区解码为消息对象列表, 并释放底层资源
+     *
+     * @param getMessageResult 存储层查询结果
+     * @param deCompressBody 是否解压消息体
+     * @return 解码后的消息列表
+     */
     protected List<MessageExt> decodeMsgList(GetMessageResult getMessageResult, boolean deCompressBody) {
         List<MessageExt> foundList = new ArrayList<>();
         try {
@@ -345,6 +459,7 @@ public class EscapeBridge {
                         continue;
                     }
                     // use CQ offset, not offset in Message
+                    // 使用 ConsumeQueue 偏移量, 不使用消息体内偏移量
                     msgExt.setQueueOffset(getMessageResult.getMessageQueueOffset().get(i));
                     foundList.add(msgExt);
                 }
@@ -356,12 +471,31 @@ public class EscapeBridge {
         return foundList;
     }
 
+    /**
+     * 同步从远端 broker 获取消息, 对异步查询接口做 join 封装
+     *
+     * @param topic 主题名
+     * @param offset 队列偏移量
+     * @param queueId 队列编号
+     * @param brokerName broker 名称
+     * @return 三元组: 消息体, 附加信息和是否建议重试
+     */
     protected Triple<MessageExt, String, Boolean> getMessageFromRemote(String topic, long offset, int queueId,
         String brokerName) {
         return getMessageFromRemoteAsync(topic, offset, queueId, brokerName).join();
     }
 
     // Triple<MessageExt, info, needRetry>, check info and retry if and only if MessageExt is null
+    // 三元组语义: 消息体, 附加信息, 是否需要重试, 仅当消息为空时依据后两项判定
+    /**
+     * 异步从远端 broker 拉取单条消息, 地址缺失时尝试刷新路由后重试
+     *
+     * @param topic 主题名
+     * @param offset 队列偏移量
+     * @param queueId 队列编号
+     * @param brokerName broker 名称
+     * @return 三元组: 消息体, 附加信息和是否建议重试
+     */
     protected CompletableFuture<Triple<MessageExt, String, Boolean>> getMessageFromRemoteAsync(String topic,
         long offset, int queueId, String brokerName) {
         try {
@@ -372,6 +506,7 @@ public class EscapeBridge {
 
                 if (null == brokerAddr) {
                     LOG.warn("can't find broker address for topic {}, {}", topic, brokerName);
+                    // 目标节点可能暂时离线, 建议上层稍后重试
                     return CompletableFuture.completedFuture(Triple.of(null, "brokerAddress not found", true)); // maybe offline temporarily, so need retry
                 }
             }
@@ -390,6 +525,7 @@ public class EscapeBridge {
             LOG.error("Get message from remote failed. {}, {}, {}, {}", topic, offset, queueId, brokerName, e);
         }
 
+        // 远端拉取出现异常, 返回可重试标记供上层兜底
         return CompletableFuture.completedFuture(Triple.of(null, "Get message from remote failed", true)); // need retry
     }
 }

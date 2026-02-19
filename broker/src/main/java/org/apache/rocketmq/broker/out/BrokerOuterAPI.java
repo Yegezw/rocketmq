@@ -17,19 +17,6 @@
 package org.apache.rocketmq.broker.out;
 
 import com.alibaba.fastjson2.JSON;
-import java.io.UnsupportedEncodingException;
-import java.net.InetAddress;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Triple;
 import org.apache.rocketmq.acl.common.AclClientRPCHook;
@@ -41,25 +28,10 @@ import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.impl.consumer.PullResultExt;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.SendStatus;
-import org.apache.rocketmq.common.AbstractBrokerRunnable;
-import org.apache.rocketmq.common.BrokerIdentity;
-import org.apache.rocketmq.common.LockCallback;
-import org.apache.rocketmq.common.MixAll;
-import org.apache.rocketmq.common.Pair;
-import org.apache.rocketmq.common.ThreadFactoryImpl;
-import org.apache.rocketmq.common.TopicConfig;
-import org.apache.rocketmq.common.UnlockCallback;
-import org.apache.rocketmq.common.UtilAll;
+import org.apache.rocketmq.common.*;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.common.filter.ExpressionType;
-import org.apache.rocketmq.common.message.Message;
-import org.apache.rocketmq.common.message.MessageAccessor;
-import org.apache.rocketmq.common.message.MessageBatch;
-import org.apache.rocketmq.common.message.MessageClientIDSetter;
-import org.apache.rocketmq.common.message.MessageConst;
-import org.apache.rocketmq.common.message.MessageDecoder;
-import org.apache.rocketmq.common.message.MessageExt;
-import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.common.message.*;
 import org.apache.rocketmq.common.namesrv.DefaultTopAddressing;
 import org.apache.rocketmq.common.namesrv.TopAddressing;
 import org.apache.rocketmq.common.sysflag.PullSysFlag;
@@ -70,70 +42,16 @@ import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.remoting.InvokeCallback;
 import org.apache.rocketmq.remoting.RPCHook;
 import org.apache.rocketmq.remoting.RemotingClient;
-import org.apache.rocketmq.remoting.exception.RemotingCommandException;
-import org.apache.rocketmq.remoting.exception.RemotingConnectException;
-import org.apache.rocketmq.remoting.exception.RemotingException;
-import org.apache.rocketmq.remoting.exception.RemotingSendRequestException;
-import org.apache.rocketmq.remoting.exception.RemotingTimeoutException;
-import org.apache.rocketmq.remoting.exception.RemotingTooMuchRequestException;
+import org.apache.rocketmq.remoting.exception.*;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
 import org.apache.rocketmq.remoting.netty.ResponseFuture;
-import org.apache.rocketmq.remoting.protocol.BrokerSyncInfo;
-import org.apache.rocketmq.remoting.protocol.DataVersion;
-import org.apache.rocketmq.remoting.protocol.RemotingCommand;
-import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
-import org.apache.rocketmq.remoting.protocol.RequestCode;
-import org.apache.rocketmq.remoting.protocol.ResponseCode;
-import org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup;
-import org.apache.rocketmq.remoting.protocol.body.ClusterInfo;
-import org.apache.rocketmq.remoting.protocol.body.ConsumerOffsetSerializeWrapper;
-import org.apache.rocketmq.remoting.protocol.body.ElectMasterResponseBody;
-import org.apache.rocketmq.remoting.protocol.body.GetBrokerMemberGroupResponseBody;
-import org.apache.rocketmq.remoting.protocol.body.KVTable;
-import org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody;
-import org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody;
-import org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper;
-import org.apache.rocketmq.remoting.protocol.body.RegisterBrokerBody;
-import org.apache.rocketmq.remoting.protocol.body.SubscriptionGroupWrapper;
-import org.apache.rocketmq.remoting.protocol.body.SyncStateSet;
-import org.apache.rocketmq.remoting.protocol.body.TopicConfigAndMappingSerializeWrapper;
-import org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper;
-import org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody;
-import org.apache.rocketmq.remoting.protocol.header.ExchangeHAInfoRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.ExchangeHAInfoResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.GetBrokerMemberGroupRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.GetMinOffsetRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.GetMinOffsetResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.LockBatchMqRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.PullMessageRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.PullMessageResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeaderV2;
-import org.apache.rocketmq.remoting.protocol.header.SendMessageResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.UnlockBatchMqRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.AlterSyncStateSetRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.ElectMasterRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.ElectMasterResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.GetMetaDataResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.GetReplicaInfoRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.GetReplicaInfoResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.register.ApplyBrokerIdRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.register.ApplyBrokerIdResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.register.GetNextBrokerIdRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.register.GetNextBrokerIdResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.register.RegisterBrokerToControllerRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.controller.register.RegisterBrokerToControllerResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.namesrv.BrokerHeartbeatRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.namesrv.QueryDataVersionRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.namesrv.QueryDataVersionResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.namesrv.RegisterBrokerRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.namesrv.RegisterBrokerResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.namesrv.RegisterTopicRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.namesrv.UnRegisterBrokerRequestHeader;
+import org.apache.rocketmq.remoting.protocol.*;
+import org.apache.rocketmq.remoting.protocol.body.*;
+import org.apache.rocketmq.remoting.protocol.header.*;
+import org.apache.rocketmq.remoting.protocol.header.controller.*;
+import org.apache.rocketmq.remoting.protocol.header.controller.register.*;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.*;
 import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.remoting.protocol.namesrv.RegisterBrokerResult;
 import org.apache.rocketmq.remoting.protocol.route.BrokerData;
@@ -146,23 +64,62 @@ import org.apache.rocketmq.remoting.rpchook.DynamicalExtFieldRPCHook;
 import org.apache.rocketmq.store.timer.TimerCheckpoint;
 import org.apache.rocketmq.store.timer.TimerMetrics;
 
+import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.*;
+
 import static org.apache.rocketmq.remoting.protocol.RemotingSysResponseCode.SUCCESS;
 import static org.apache.rocketmq.remoting.protocol.ResponseCode.CONTROLLER_MASTER_STILL_EXIST;
 
+/**
+ * 提供 Broker 与 NameServer 以及其他 Broker 之间的通信接口, 包括注册、心跳、信息查询等功能
+ */
 public class BrokerOuterAPI {
+    /**
+     * Broker 外部通信日志记录器
+     */
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
+    /**
+     * 执行远程请求的 RemotingClient 实例
+     */
     private final RemotingClient remotingClient;
+    /**
+     * NameServer 地址发现组件
+     */
     private final TopAddressing topAddressing = new DefaultTopAddressing(MixAll.getWSAddr());
+    /**
+     * 执行外部异步任务的线程池
+     */
     private final ExecutorService brokerOuterExecutor = ThreadUtils.newThreadPoolExecutor(4, 10, 1, TimeUnit.MINUTES,
             new ArrayBlockingQueue<>(32), new ThreadFactoryImpl("brokerOutApi_thread_", true));
+    /**
+     * 客户端路由元数据缓存
+     */
     private final ClientMetadata clientMetadata;
+    /**
+     * 基于 RemotingClient 的 RPC 客户端封装
+     */
     private final RpcClient rpcClient;
+    /**
+     * 缓存的 NameServer 地址字符串
+     */
     private String nameSrvAddr = null;
 
+    /**
+     * 创建 BrokerOuterAPI 实例, 使用默认扩展字段 RPCHook 与客户端元数据
+     */
     public BrokerOuterAPI(final NettyClientConfig nettyClientConfig, AuthConfig authConfig) {
         this(nettyClientConfig, authConfig, new DynamicalExtFieldRPCHook(), new ClientMetadata());
     }
 
+    /**
+     * 创建 BrokerOuterAPI 实例并初始化 RemotingClient, RPCHook 与 RpcClient
+     */
     private BrokerOuterAPI(final NettyClientConfig nettyClientConfig, AuthConfig authConfig, RPCHook rpcHook, ClientMetadata clientMetadata) {
         this.remotingClient = new NettyRemotingClient(nettyClientConfig);
         this.clientMetadata = clientMetadata;
@@ -171,6 +128,9 @@ public class BrokerOuterAPI {
         this.rpcClient = new RpcClientImpl(this.clientMetadata, this.remotingClient);
     }
 
+    /**
+     * 根据认证配置构建 ACL RPCHook, 当凭证缺失时返回 null
+     */
     private RPCHook newAclRPCHook(AuthConfig config) {
         if (config == null || StringUtils.isBlank(config.getInnerClientAuthenticationCredentials())) {
             return null;
@@ -183,10 +143,16 @@ public class BrokerOuterAPI {
         return new AclClientRPCHook(sessionCredentials);
     }
 
+    /**
+     * 启动底层 RemotingClient
+     */
     public void start() {
         this.remotingClient.start();
     }
 
+    /**
+     * 关闭 RemotingClient 与 BrokerOuterAPI 线程池
+     */
     public void shutdown() {
         this.remotingClient.shutdown();
         this.brokerOuterExecutor.shutdown();
@@ -196,6 +162,9 @@ public class BrokerOuterAPI {
         return this.remotingClient.getNameServerAddressList();
     }
 
+    /**
+     * 从地址服务拉取 NameServer 地址并在变化时刷新本地列表
+     */
     public String fetchNameServerAddr() {
         try {
             String addrs = this.topAddressing.fetchNSAddr();
@@ -213,15 +182,22 @@ public class BrokerOuterAPI {
         return nameSrvAddr;
     }
 
+    /**
+     * 通过 DNS 解析域名并拼接端口, 返回可用地址列表
+     */
     public List<String> dnsLookupAddressByDomain(String domain) {
         List<String> addressList = new ArrayList<>();
         try {
+            // 缩短 JVM DNS 缓存 TTL = 10 seconds, 提高地址变更感知速度
             java.security.Security.setProperty("networkaddress.cache.ttl", "10");
+            // 按 host:port 约定拆分域名与端口
             int index = domain.indexOf(":");
             String portStr = domain.substring(index);
             String domainStr = domain.substring(0, index);
+            // 解析域名对应的全部 IP 地址
             InetAddress[] addresses = InetAddress.getAllByName(domainStr);
             for (InetAddress address : addresses) {
+                // 保留原端口并组装为可直连地址
                 addressList.add(address.getHostAddress() + portStr);
             }
             LOGGER.info("dns lookup address by domain success, domain={}, result={}", domain, addressList);
@@ -231,26 +207,41 @@ public class BrokerOuterAPI {
         return addressList;
     }
 
+    /**
+     * 检测目标地址是否可达
+     */
     public boolean checkAddressReachable(String address) {
         return this.remotingClient.isAddressReachable(address);
     }
 
+    /**
+     * 按分号分隔地址字符串并更新 NameServer 地址列表
+     */
     public void updateNameServerAddressList(final String addrs) {
         String[] addrArray = addrs.split(";");
         List<String> lst = new ArrayList<String>(Arrays.asList(addrArray));
         this.remotingClient.updateNameServerAddressList(lst);
     }
 
+    /**
+     * 先通过 DNS 解析域名再更新 NameServer 地址列表
+     */
     public void updateNameServerAddressListByDnsLookup(final String domain) {
         List<String> lst = this.dnsLookupAddressByDomain(domain);
         this.remotingClient.updateNameServerAddressList(lst);
     }
 
+    /**
+     * 同步 Broker 成员组, 默认使用新版本查询逻辑
+     */
     public BrokerMemberGroup syncBrokerMemberGroup(String clusterName, String brokerName)
         throws InterruptedException, RemotingTimeoutException, RemotingSendRequestException, RemotingConnectException {
         return syncBrokerMemberGroup(clusterName, brokerName, false);
     }
 
+    /**
+     * 同步 Broker 成员组, 可按兼容开关选择查询方式
+     */
     public BrokerMemberGroup syncBrokerMemberGroup(String clusterName, String brokerName,
         boolean isCompatibleWithOldNameSrv)
         throws InterruptedException, RemotingTimeoutException, RemotingSendRequestException, RemotingConnectException {
@@ -328,6 +319,9 @@ public class BrokerOuterAPI {
         return brokerMemberGroup;
     }
 
+    /**
+     * 向所有 NameServer 异步发送携带 DataVersion 的心跳请求
+     */
     public void sendHeartbeatViaDataVersion(
         final String clusterName,
         final String brokerAddr,
@@ -347,6 +341,9 @@ public class BrokerOuterAPI {
             for (final String namesrvAddr : nameServerAddressList) {
                 brokerOuterExecutor.execute(new AbstractBrokerRunnable(new BrokerIdentity(clusterName, brokerName, brokerId, isInBrokerContainer)) {
 
+                    /**
+                     * 向单个 NameServer 发送 DataVersion 心跳
+                     */
                     @Override
                     public void run0() {
                         RemotingCommand request = RemotingCommand.createRequestCommand(RequestCode.QUERY_DATA_VERSION, requestHeader);
@@ -363,6 +360,9 @@ public class BrokerOuterAPI {
         }
     }
 
+    /**
+     * 向所有 NameServer 异步发送基础心跳请求
+     */
     public void sendHeartbeat(final String clusterName,
         final String brokerAddr,
         final String brokerName,
@@ -379,6 +379,9 @@ public class BrokerOuterAPI {
         if (nameServerAddressList != null && nameServerAddressList.size() > 0) {
             for (final String namesrvAddr : nameServerAddressList) {
                 brokerOuterExecutor.execute(new AbstractBrokerRunnable(new BrokerIdentity(clusterName, brokerName, brokerId, isInBrokerContainer)) {
+                    /**
+                     * 向单个 NameServer 发送基础心跳
+                     */
                     @Override
                     public void run0() {
                         RemotingCommand request = RemotingCommand.createRequestCommand(RequestCode.BROKER_HEARTBEAT, requestHeader);
@@ -394,6 +397,9 @@ public class BrokerOuterAPI {
         }
     }
 
+    /**
+     * 从主 Broker 拉取 HA 同步信息
+     */
     public BrokerSyncInfo retrieveBrokerHaInfo(String masterBrokerAddr)
         throws InterruptedException, RemotingTimeoutException, RemotingSendRequestException, RemotingConnectException,
         MQBrokerException, RemotingCommandException {
@@ -416,6 +422,9 @@ public class BrokerOuterAPI {
         throw new MQBrokerException(response.getCode(), response.getRemark());
     }
 
+    /**
+     * 向指定 Broker 上报 HA 地址与偏移信息
+     */
     public void sendBrokerHaInfo(String brokerAddr, String masterHaAddr, long brokerInitMaxOffset, String masterAddr)
         throws InterruptedException, RemotingTimeoutException, RemotingSendRequestException, RemotingConnectException, MQBrokerException {
         ExchangeHAInfoRequestHeader requestHeader = new ExchangeHAInfoRequestHeader();
@@ -439,6 +448,9 @@ public class BrokerOuterAPI {
         throw new MQBrokerException(response.getCode(), response.getRemark());
     }
 
+    /**
+     * 向所有 NameServer 注册 Broker, 使用默认心跳超时配置
+     */
     public List<RegisterBrokerResult> registerBrokerAll(
         final String clusterName,
         final String brokerAddr,
@@ -469,6 +481,8 @@ public class BrokerOuterAPI {
     /**
      * Considering compression brings much CPU overhead to name server, stream API will not support compression and
      * compression feature is deprecated.
+     * <br>
+     * 全量注册接口保留压缩参数, 当前固定关闭压缩以降低 NameServer CPU 开销
      *
      * @param clusterName
      * @param brokerAddr
@@ -522,6 +536,7 @@ public class BrokerOuterAPI {
             final CountDownLatch countDownLatch = new CountDownLatch(nameServerAddressList.size());
             for (final String namesrvAddr : nameServerAddressList) {
                 brokerOuterExecutor.execute(new AbstractBrokerRunnable(brokerIdentity) {
+                    // 向单个 NameServer 发送注册请求并统计结果
                     @Override
                     public void run0() {
                         try {
@@ -551,6 +566,9 @@ public class BrokerOuterAPI {
         return registerBrokerResultList;
     }
 
+    /**
+     * 向单个 NameServer 执行 Broker 注册, 根据响应构建注册结果
+     */
     private RegisterBrokerResult registerBroker(
         final String namesrvAddr,
         final boolean oneway,
@@ -567,6 +585,7 @@ public class BrokerOuterAPI {
                 this.remotingClient.invokeOneway(namesrvAddr, request, timeoutMills);
             } catch (RemotingTooMuchRequestException e) {
                 // Ignore
+                // oneway 模式下超过并发阈值时忽略异常
             }
             return null;
         }
@@ -591,6 +610,9 @@ public class BrokerOuterAPI {
         throw new MQBrokerException(response.getCode(), response.getRemark(), requestHeader == null ? null : requestHeader.getBrokerAddr());
     }
 
+    /**
+     * 向所有 NameServer 取消 Broker 注册
+     */
     public void unregisterBrokerAll(
         final String clusterName,
         final String brokerAddr,
@@ -610,6 +632,9 @@ public class BrokerOuterAPI {
         }
     }
 
+    /**
+     * 向指定 NameServer 发送取消注册请求
+     */
     public void unregisterBroker(
         final String namesrvAddr,
         final String clusterName,
@@ -640,6 +665,8 @@ public class BrokerOuterAPI {
     /**
      * Register the topic route info of single topic to all name server nodes.
      * This method is used to replace incremental broker registration feature.
+     * <br>
+     * 将单个 Topic 路由同步到所有 NameServer, 用于替代增量注册
      */
     public void registerSingleTopicAll(
         final String brokerName,
@@ -695,6 +722,9 @@ public class BrokerOuterAPI {
         }
     }
 
+    /**
+     * 检查各 NameServer 的 DataVersion 是否变化, 判断是否需要重新注册
+     */
     public List<Boolean> needRegister(
         final String clusterName,
         final String brokerAddr,
@@ -709,6 +739,9 @@ public class BrokerOuterAPI {
             final CountDownLatch countDownLatch = new CountDownLatch(nameServerAddressList.size());
             for (final String namesrvAddr : nameServerAddressList) {
                 brokerOuterExecutor.execute(new AbstractBrokerRunnable(new BrokerIdentity(clusterName, brokerName, brokerId, isInBrokerContainer)) {
+                    /**
+                     * 向单个 NameServer 查询 DataVersion 变化
+                     */
                     @Override
                     public void run0() {
                         try {
@@ -866,10 +899,16 @@ public class BrokerOuterAPI {
         throw new MQBrokerException(response.getCode(), response.getRemark(), addr);
     }
 
+    /**
+     * 向 RemotingClient 注册自定义 RPCHook
+     */
     public void registerRPCHook(RPCHook rpcHook) {
         remotingClient.registerRPCHook(rpcHook);
     }
 
+    /**
+     * 清空 RemotingClient 已注册的 RPCHook
+     */
     public void clearRPCHook() {
         remotingClient.clearRPCHook();
     }
@@ -920,6 +959,9 @@ public class BrokerOuterAPI {
         throw new MQBrokerException(response.getCode(), response.getRemark());
     }
 
+    /**
+     * 异步请求 Broker 锁定一批消息队列
+     */
     public void lockBatchMQAsync(
         final String addr,
         final LockBatchRequestBody requestBody,
@@ -929,11 +971,17 @@ public class BrokerOuterAPI {
 
         request.setBody(requestBody.encode());
         this.remotingClient.invokeAsync(addr, request, timeoutMillis, new InvokeCallback() {
+            /**
+             * 异步回调完成通知, 当前无需额外处理
+             */
             @Override
             public void operationComplete(ResponseFuture responseFuture) {
 
             }
 
+            /**
+             * 处理锁定队列请求成功回调并返回结果
+             */
             @Override
             public void operationSucceed(RemotingCommand response) {
                 if (callback == null) {
@@ -949,6 +997,9 @@ public class BrokerOuterAPI {
                 }
             }
 
+            /**
+             * 处理锁定队列请求失败回调
+             */
             @Override
             public void operationFail(Throwable throwable) {
                 if (callback == null) {
@@ -959,6 +1010,9 @@ public class BrokerOuterAPI {
         });
     }
 
+    /**
+     * 异步请求 Broker 解锁一批消息队列
+     */
     public void unlockBatchMQAsync(
         final String addr,
         final UnlockBatchRequestBody requestBody,
@@ -969,11 +1023,17 @@ public class BrokerOuterAPI {
         request.setBody(requestBody.encode());
 
         this.remotingClient.invokeAsync(addr, request, timeoutMillis, new InvokeCallback() {
+            /**
+             * 异步回调完成通知, 当前无需额外处理
+             */
             @Override
             public void operationComplete(ResponseFuture responseFuture) {
 
             }
 
+            /**
+             * 处理解锁队列请求成功回调
+             */
             @Override
             public void operationSucceed(RemotingCommand response) {
                 if (callback == null) {
@@ -986,6 +1046,9 @@ public class BrokerOuterAPI {
                 }
             }
 
+            /**
+             * 处理解锁队列请求失败回调
+             */
             @Override
             public void operationFail(Throwable throwable) {
                 if (callback == null) {
@@ -1000,6 +1063,9 @@ public class BrokerOuterAPI {
         return this.remotingClient;
     }
 
+    /**
+     * 同步发送消息到指定 Broker 并解析发送结果
+     */
     public SendResult sendMessageToSpecificBroker(String brokerAddr, final String brokerName,
         final MessageExt msg, String group,
         long timeoutMillis) throws RemotingException, MQBrokerException, InterruptedException {
@@ -1009,6 +1075,9 @@ public class BrokerOuterAPI {
         return this.processSendResponse(brokerName, msg, response);
     }
 
+    /**
+     * 异步发送消息到指定 Broker 并返回 Future 结果
+     */
     public CompletableFuture<SendResult> sendMessageToSpecificBrokerAsync(String brokerAddr, final String brokerName,
         final MessageExt msg, String group,
         long timeoutMillis) {
@@ -1018,11 +1087,17 @@ public class BrokerOuterAPI {
         final String msgId = msg.getMsgId();
         try {
             this.remotingClient.invokeAsync(brokerAddr, request, timeoutMillis, new InvokeCallback() {
+                /**
+                 * 异步回调完成通知, 当前无需额外处理
+                 */
                 @Override
                 public void operationComplete(ResponseFuture responseFuture) {
 
                 }
 
+                /**
+                 * 处理异步发送成功回调并完成 Future
+                 */
                 @Override
                 public void operationSucceed(RemotingCommand response) {
                     try {
@@ -1034,6 +1109,9 @@ public class BrokerOuterAPI {
                     }
                 }
 
+                /**
+                 * 处理异步发送失败回调并完成 Future 异常
+                 */
                 @Override
                 public void operationFail(Throwable throwable) {
                     cf.completeExceptionally(throwable);
@@ -1046,6 +1124,9 @@ public class BrokerOuterAPI {
         return cf;
     }
 
+    /**
+     * 构建发送消息请求命令并写入消息体
+     */
     private static RemotingCommand buildSendMessageRequest(MessageExt msg, String group) {
         SendMessageRequestHeaderV2 requestHeaderV2 = buildSendMessageRequestHeaderV2(msg, group);
         RemotingCommand request = RemotingCommand.createRequestCommand(RequestCode.SEND_MESSAGE_V2, requestHeaderV2);
@@ -1054,6 +1135,9 @@ public class BrokerOuterAPI {
         return request;
     }
 
+    /**
+     * 构建 SendMessageRequestHeaderV2 请求头
+     */
     private static SendMessageRequestHeaderV2 buildSendMessageRequestHeaderV2(MessageExt msg, String group) {
         SendMessageRequestHeader requestHeader = new SendMessageRequestHeader();
         requestHeader.setProducerGroup(group);
@@ -1072,6 +1156,9 @@ public class BrokerOuterAPI {
         return requestHeaderV2;
     }
 
+    /**
+     * 解析发送响应并转换为 SendResult
+     */
     private SendResult processSendResponse(
         final String brokerName,
         final Message msg,
@@ -1099,6 +1186,7 @@ public class BrokerOuterAPI {
             SendMessageResponseHeader responseHeader = response.decodeCommandCustomHeader(SendMessageResponseHeader.class);
 
             //If namespace not null , reset Topic without namespace.
+            // 兼容命名空间场景, 发送结果中的 Topic 使用原始 Topic
             String topic = msg.getTopic();
 
             MessageQueue messageQueue = new MessageQueue(topic, brokerName, responseHeader.getQueueId());
@@ -1186,11 +1274,17 @@ public class BrokerOuterAPI {
         throw new MQBrokerException(response.getCode(), response.getRemark());
     }
 
+    /**
+     * 将请求异步转发到目标 Broker
+     */
     public void forwardRequest(String brokerAddr, RemotingCommand request, long timeoutMillis,
         InvokeCallback invokeCallback) throws InterruptedException, RemotingSendRequestException, RemotingTimeoutException, RemotingTooMuchRequestException, RemotingConnectException {
         this.remotingClient.invokeAsync(brokerAddr, request, timeoutMillis, invokeCallback);
     }
 
+    /**
+     * 拉取最新集群信息并刷新客户端元数据缓存
+     */
     public void refreshMetadata() throws Exception {
         ClusterInfo brokerClusterInfo = getBrokerClusterInfo();
         clientMetadata.refreshClusterInfo(brokerClusterInfo);
@@ -1233,6 +1327,8 @@ public class BrokerOuterAPI {
 
     /**
      * Alter syncStateSet
+     * <br>
+     * 调整指定 Broker 组的 SyncStateSet
      */
     public SyncStateSet alterSyncStateSet(
         final String controllerAddress,
@@ -1256,6 +1352,8 @@ public class BrokerOuterAPI {
 
     /**
      * Broker try to elect itself as a master in broker set
+     * <br>
+     * Broker 主动向 Controller 发起 Master 选举请求
      */
     public Pair<ElectMasterResponseHeader, Set<Long>> brokerElect(String controllerAddress, String clusterName,
         String brokerName,
@@ -1267,6 +1365,7 @@ public class BrokerOuterAPI {
         assert response != null;
         switch (response.getCode()) {
             // Only record success response.
+            // 仅在返回成功或主节点仍存在时记录响应结果
             case CONTROLLER_MASTER_STILL_EXIST:
             case SUCCESS:
                 final ElectMasterResponseHeader responseHeader = response.decodeCommandCustomHeader(ElectMasterResponseHeader.class);
@@ -1289,6 +1388,9 @@ public class BrokerOuterAPI {
         throw new MQBrokerException(response.getCode(), response.getRemark());
     }
 
+    /**
+     * 向 Controller 申请指定 Broker ID
+     */
     public ApplyBrokerIdResponseHeader applyBrokerId(final String clusterName, final String brokerName,
         final Long brokerId, final String registerCheckCode, final String controllerAddress) throws Exception {
         final ApplyBrokerIdRequestHeader requestHeader = new ApplyBrokerIdRequestHeader(clusterName, brokerName, brokerId, registerCheckCode);
@@ -1301,6 +1403,9 @@ public class BrokerOuterAPI {
         throw new MQBrokerException(response.getCode(), response.getRemark());
     }
 
+    /**
+     * 向 Controller 注册 Broker 并返回 SyncStateSet
+     */
     public Pair<RegisterBrokerToControllerResponseHeader, Set<Long>> registerBrokerToController(
         final String clusterName, final String brokerName, final Long brokerId, final String brokerAddress,
         final String controllerAddress) throws Exception {
@@ -1318,6 +1423,8 @@ public class BrokerOuterAPI {
 
     /**
      * Get broker replica info
+     * <br>
+     * 从 Controller 查询 Broker 副本信息与 SyncStateSet
      */
     public Pair<GetReplicaInfoResponseHeader, SyncStateSet> getReplicaInfo(final String controllerAddress,
         final String brokerName) throws Exception {
@@ -1338,6 +1445,8 @@ public class BrokerOuterAPI {
 
     /**
      * Send heartbeat to controller
+     * <br>
+     * 向 Controller 异步发送 Broker 心跳
      */
     public void sendHeartbeatToController(final String controllerAddress,
         final String clusterName,
@@ -1366,6 +1475,9 @@ public class BrokerOuterAPI {
         requestHeader.setElectionPriority(electionPriority);
         requestHeader.setBrokerId(brokerId);
         brokerOuterExecutor.execute(new AbstractBrokerRunnable(new BrokerIdentity(clusterName, brokerName, brokerId, isInBrokerContainer)) {
+            /**
+             * 向 Controller 发送 Broker 心跳请求
+             */
             @Override
             public void run0() {
                 RemotingCommand request = RemotingCommand.createRequestCommand(RequestCode.BROKER_HEARTBEAT, requestHeader);
@@ -1379,7 +1491,11 @@ public class BrokerOuterAPI {
         });
     }
 
+    /**
+     * 异步从指定 Broker 拉取消息并返回重试建议
+     */
     // Triple<PullResult, info, needRetry>, should check info and retry if and only if PullResult is null
+    // 返回值为 PullResult, 信息与是否需要重试标识, 仅当 PullResult 为空时需要依据标识重试
     public CompletableFuture<Triple<PullResult, String, Boolean>> pullMessageFromSpecificBrokerAsync(String brokerName, String brokerAddr,
         String consumerGroup, String topic, int queueId, long offset,
         int maxNums, long timeoutMillis) throws RemotingException, InterruptedException {
@@ -1401,23 +1517,34 @@ public class BrokerOuterAPI {
         RemotingCommand request = RemotingCommand.createRequestCommand(RequestCode.PULL_MESSAGE, requestHeader);
         CompletableFuture<Triple<PullResult, String, Boolean>> pullResultFuture = new CompletableFuture<>();
         this.remotingClient.invokeAsync(brokerAddr, request, timeoutMillis, new InvokeCallback() {
+            /**
+             * 异步回调完成通知, 当前无需额外处理
+             */
             @Override
             public void operationComplete(ResponseFuture responseFuture) {
 
             }
 
+            /**
+             * 处理拉取消息成功回调并封装 PullResult
+             */
             @Override
             public void operationSucceed(RemotingCommand response) {
                 try {
                     PullResultExt pullResultExt = processPullResponse(response, brokerAddr);
                     processPullResult(pullResultExt, brokerName, queueId);
                     pullResultFuture.complete(Triple.of(pullResultExt, pullResultExt.getPullStatus().name(), false)); // found or not found really, so no retry
+                    // 服务端已明确返回拉取结果, 当前分支无需重试
                 } catch (Exception e) {
                     // retry when NO_PERMISSION, SUBSCRIPTION_GROUP_NOT_EXIST etc. even when TOPIC_NOT_EXIST
+                    // 解析或协议异常按可重试处理, 由调用方决定后续重试策略
                     pullResultFuture.complete(Triple.of(null, "Response Code:" + response.getCode(), true));
                 }
             }
 
+            /**
+             * 处理拉取消息失败回调并返回可重试结果
+             */
             @Override
             public void operationFail(Throwable throwable) {
                 pullResultFuture.complete(Triple.of(null, throwable.getMessage(), true));
@@ -1426,6 +1553,9 @@ public class BrokerOuterAPI {
         return pullResultFuture;
     }
 
+    /**
+     * 解析拉取响应码并转换为 PullResultExt
+     */
     private PullResultExt processPullResponse(
         final RemotingCommand response,
         final String addr) throws MQBrokerException, RemotingCommandException {
@@ -1455,6 +1585,9 @@ public class BrokerOuterAPI {
 
     }
 
+    /**
+     * 对拉取结果中的消息补齐属性并修正偏移
+     */
     private PullResult processPullResult(final PullResultExt pullResult, String brokerName, int queueId) {
 
         if (PullStatus.FOUND == pullResult.getPullStatus()) {
@@ -1467,6 +1600,7 @@ public class BrokerOuterAPI {
             );
 
             // Currently batch messages are not supported
+            // 当前按单条消息处理批量解码结果, 统一补齐属性并修正偏移
             for (MessageExt msg : msgList) {
                 String traFlag = msg.getProperty(MessageConst.PROPERTY_TRANSACTION_PREPARED);
                 if (Boolean.parseBoolean(traFlag)) {

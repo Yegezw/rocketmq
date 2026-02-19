@@ -19,11 +19,26 @@ package org.apache.rocketmq.common;
 import com.google.common.base.Objects;
 
 public class TopicQueueId {
+    /**
+     * 主题名称
+     */
     private final String topic;
+    /**
+     * 队列 ID
+     */
     private final int queueId;
 
+    /**
+     * 预计算哈希值
+     */
     private final int hash;
 
+    /**
+     * 创建主题队列标识对象并预计算哈希值
+     *
+     * @param topic 主题名称
+     * @param queueId 队列 ID
+     */
     public TopicQueueId(String topic, int queueId) {
         this.topic = topic;
         this.queueId = queueId;
@@ -31,6 +46,12 @@ public class TopicQueueId {
         this.hash = Objects.hashCode(topic, queueId);
     }
 
+    /**
+     * 判断两个主题队列标识是否相等
+     *
+     * @param o 待比较对象
+     * @return 主题名称与队列 ID 均相等时返回 true
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o)
@@ -41,11 +62,21 @@ public class TopicQueueId {
         return queueId == broker.queueId && Objects.equal(topic, broker.topic);
     }
 
+    /**
+     * 返回预计算哈希值, 避免重复计算
+     *
+     * @return 对象哈希值
+     */
     @Override
     public int hashCode() {
         return hash;
     }
 
+    /**
+     * 输出可读字符串表示, 用于日志与调试定位
+     *
+     * @return 主题队列字符串表示
+     */
     @Override
     public String toString() {
         final StringBuilder sb = new StringBuilder("MessageQueueInBroker{");

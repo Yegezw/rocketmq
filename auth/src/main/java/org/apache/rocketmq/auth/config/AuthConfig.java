@@ -16,60 +16,147 @@
  */
 package org.apache.rocketmq.auth.config;
 
+/**
+ * 认证授权配置<br>
+ * 定义认证与鉴权插件及缓存相关参数
+ */
 public class AuthConfig implements Cloneable {
 
+    /**
+     * 当前节点配置名
+     */
     private String configName;
 
+    /**
+     * 当前节点所属集群名
+     */
     private String clusterName;
 
+    /**
+     * 认证授权配置文件路径
+     */
     private String authConfigPath;
 
+    /**
+     * 是否启用认证能力
+     */
     private boolean authenticationEnabled = false;
 
+    /**
+     * 认证提供者实现类
+     */
     private String authenticationProvider;
 
+    /**
+     * 认证元数据提供者实现类
+     */
     private String authenticationMetadataProvider;
 
+    /**
+     * 认证策略实现类
+     */
     private String authenticationStrategy;
 
+    /**
+     * 认证白名单
+     */
     private String authenticationWhitelist;
 
+    /**
+     * 初始化认证用户配置
+     */
     private String initAuthenticationUser;
 
+    /**
+     * 内部客户端认证凭证
+     */
     private String innerClientAuthenticationCredentials;
 
+    /**
+     * 是否启用鉴权能力
+     */
     private boolean authorizationEnabled = false;
 
+    /**
+     * 鉴权提供者实现类
+     */
     private String authorizationProvider;
 
+    /**
+     * 鉴权元数据提供者实现类
+     */
     private String authorizationMetadataProvider;
 
+    /**
+     * 鉴权策略实现类
+     */
     private String authorizationStrategy;
 
+    /**
+     * 鉴权白名单
+     */
     private String authorizationWhitelist;
 
+    /**
+     * 是否启用 v1 鉴权数据迁移
+     */
     private boolean migrateAuthFromV1Enabled = false;
 
+    /**
+     * 用户缓存最大条目数
+     */
     private int userCacheMaxNum = 1000;
 
+    /**
+     * 用户缓存过期时间, 单位秒
+     */
     private int userCacheExpiredSecond = 600;
 
+    /**
+     * 用户缓存刷新间隔, 单位秒
+     */
     private int userCacheRefreshSecond = 60;
 
+    /**
+     * ACL 缓存最大条目数
+     */
     private int aclCacheMaxNum = 1000;
 
+    /**
+     * ACL 缓存过期时间, 单位秒
+     */
     private int aclCacheExpiredSecond = 600;
 
+    /**
+     * ACL 缓存刷新间隔, 单位秒
+     */
     private int aclCacheRefreshSecond = 60;
 
+    /**
+     * 有状态认证缓存最大条目数
+     */
     private int statefulAuthenticationCacheMaxNum = 10000;
 
+    /**
+     * 有状态认证缓存过期时间, 单位秒
+     */
     private int statefulAuthenticationCacheExpiredSecond = 60;
 
+    /**
+     * 有状态鉴权缓存最大条目数
+     */
     private int statefulAuthorizationCacheMaxNum = 10000;
 
+    /**
+     * 有状态鉴权缓存过期时间, 单位秒
+     */
     private int statefulAuthorizationCacheExpiredSecond = 60;
 
+    /**
+     * 克隆认证授权配置对象
+     *
+     * @return 认证授权配置副本
+     */
     @Override
     public AuthConfig clone() {
         try {

@@ -16,10 +16,28 @@
  */
 package org.apache.rocketmq.broker.mqtrace;
 
+/**
+ * 消费消息钩子接口, 用于在消息消费前后扩展审计与统计逻辑
+ */
 public interface ConsumeMessageHook {
+    /**
+     * 返回钩子名称, 用于日志与诊断输出
+     *
+     * @return 钩子名称
+     */
     String hookName();
 
+    /**
+     * 消费前回调, 可读取消费上下文并预置扩展信息
+     *
+     * @param context 消费上下文
+     */
     void consumeMessageBefore(final ConsumeMessageContext context);
 
+    /**
+     * 消费后回调, 可根据结果补充统计与追踪数据
+     *
+     * @param context 消费上下文
+     */
     void consumeMessageAfter(final ConsumeMessageContext context);
 }
