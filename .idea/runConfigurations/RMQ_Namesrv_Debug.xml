@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="RMQ-Namesrv-Debug" type="Application" factoryName="Application">
+    <envs>
+      <env name="ROCKETMQ_HOME" value="$PROJECT_DIR$/distribution" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="org.apache.rocketmq.namesrv.NamesrvStartup" />
+    <module name="rocketmq-namesrv" />
+    <option name="PROGRAM_PARAMETERS" value="-c $PROJECT_DIR$/distribution/conf/debug/namesrv-debug.properties" />
+    <option name="VM_PARAMETERS" value="-Xms256m -Xmx256m -XX:MaxDirectMemorySize=256m -Duser.home=$PROJECT_DIR$/.debug/home -Drmq.logback.configurationFile=$PROJECT_DIR$/namesrv/src/main/resources/rmq.namesrv.logback.xml" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

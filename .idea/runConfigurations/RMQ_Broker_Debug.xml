@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="RMQ-Broker-Debug" type="Application" factoryName="Application">
+    <envs>
+      <env name="ROCKETMQ_HOME" value="$PROJECT_DIR$/distribution" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="org.apache.rocketmq.broker.BrokerStartup" />
+    <module name="rocketmq-broker" />
+    <option name="PROGRAM_PARAMETERS" value="-c $PROJECT_DIR$/distribution/conf/debug/broker-debug.conf -n 127.0.0.1:9876" />
+    <option name="VM_PARAMETERS" value="-Xms2g -Xmx2g -Xmn1g -XX:MaxDirectMemorySize=2g -Duser.home=$PROJECT_DIR$/.debug/home -Drmq.logback.configurationFile=$PROJECT_DIR$/broker/src/main/resources/rmq.broker.logback.xml" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

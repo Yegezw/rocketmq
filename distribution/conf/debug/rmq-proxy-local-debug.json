@@ -1,0 +1,8 @@
+{
+  "rocketMQClusterName": "DefaultCluster",
+  "namesrvAddr": "127.0.0.1:9876",
+  "proxyMode": "local",
+  "brokerConfigPath": "/Users/lidong/Desktop/code/source/rocketmq/distribution/conf/debug/broker-debug.conf",
+  "grpcServerPort": 8081,
+  "remotingListenPort": 8080
+}

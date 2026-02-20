@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="RMQ-Proxy-Local-Debug" type="Application" factoryName="Application">
+    <envs>
+      <env name="ROCKETMQ_HOME" value="$PROJECT_DIR$/distribution" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="org.apache.rocketmq.proxy.ProxyStartup" />
+    <module name="rocketmq-proxy" />
+    <option name="PROGRAM_PARAMETERS" value="-pc $PROJECT_DIR$/distribution/conf/debug/rmq-proxy-local-debug.json -pm local -n 127.0.0.1:9876 -bc $PROJECT_DIR$/distribution/conf/debug/broker-debug.conf" />
+    <option name="VM_PARAMETERS" value="-Xms2g -Xmx2g -Xmn1g -XX:MaxDirectMemorySize=2g -Duser.home=$PROJECT_DIR$/.debug/home -Drmq.logback.configurationFile=$PROJECT_DIR$/proxy/src/main/resources/rmq.proxy.logback.xml" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

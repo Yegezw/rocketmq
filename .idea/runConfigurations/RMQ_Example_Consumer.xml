@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="RMQ-Example-Consumer" type="Application" factoryName="Application">
+    <envs>
+      <env name="ROCKETMQ_HOME" value="$PROJECT_DIR$/distribution" />
+      <env name="NAMESRV_ADDR" value="127.0.0.1:9876" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="org.apache.rocketmq.example.quickstart.Consumer" />
+    <module name="rocketmq-example" />
+    <option name="VM_PARAMETERS" value="-Duser.home=$PROJECT_DIR$/.debug/home" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
